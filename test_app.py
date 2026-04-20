@@ -69,78 +69,106 @@ class WasteAppIntegrationTests(unittest.TestCase):
             payload={"username": username, "password": "password"},
         )
 
-    def test_worker_can_login_and_create_dry_entry(self) -> None:
+    def test_staff_can_mark_housing_collection(self) -> None:
         opener = self.build_opener()
-        status, payload = self.login(opener, "worker1")
+        status, payload = self.login(opener, "staff1")
         self.assertEqual(status, 200)
-        self.assertEqual(payload["user"]["role"], "worker")
+        self.assertEqual(payload["user"]["role"], "staff")
 
         status, payload = self.api_request(
             opener,
-            "/api/entries",
+            "/api/staff-collections",
             method="POST",
             payload={
-                "wasteCategory": "Dry Waste",
-                "housingBlock": "AB1",
+                "housingBlock": "HB 1",
                 "roomNumber": "101",
+                "collectionDate": "2026-04-20",
+            },
+        )
+        self.assertEqual(status, 201)
+        self.assertEqual(payload["message"], "Housing collection marked successfully.")
+
+    def test_operator_can_create_segregation_entry_from_staff_collection(self) -> None:
+        staff = self.build_opener()
+        self.login(staff, "staff1")
+        self.api_request(
+            staff,
+            "/api/staff-collections",
+            method="POST",
+            payload={
+                "housingBlock": "HB 2",
+                "roomNumber": "102",
+                "collectionDate": "2026-04-20",
+            },
+        )
+
+        operator = self.build_opener()
+        status, payload = self.login(operator, "operator1")
+        self.assertEqual(status, 200)
+        self.assertEqual(payload["user"]["role"], "operator")
+
+        status, payload = self.api_request(operator, "/api/operator/collections")
+        self.assertEqual(status, 200)
+        collection_id = payload["collections"][0]["id"]
+
+        status, payload = self.api_request(
+            operator,
+            "/api/processing-entries",
+            method="POST",
+            payload={
+                "collectionId": collection_id,
+                "wasteCategory": "Dry Waste",
                 "wasteSubtype": "Paper",
-                "sourceLocation": "Academic Area",
                 "quantity": "2.5",
             },
         )
         self.assertEqual(status, 201)
-        self.assertEqual(payload["message"], "Waste entry saved successfully.")
+        self.assertEqual(payload["message"], "Segregation entry saved successfully.")
 
-    def test_hazardous_entry_requires_date_range(self) -> None:
-        opener = self.build_opener()
-        self.login(opener, "worker2")
-
-        status, payload = self.api_request(
-            opener,
-            "/api/entries",
+    def test_operator_compost_update_derives_biogas(self) -> None:
+        staff = self.build_opener()
+        self.login(staff, "staff2")
+        self.api_request(
+            staff,
+            "/api/staff-collections",
             method="POST",
             payload={
-                "wasteCategory": "Hazardous Waste",
-                "wasteSubtype": "Lab Waste",
-                "housingBlock": "AB2",
-                "roomNumber": "102",
-                "quantity": "1.2",
+                "housingBlock": "HB 3",
+                "roomNumber": "103",
+                "collectionDate": "2026-04-20",
             },
         )
-        self.assertEqual(status, 400)
-        self.assertIn("required for hazardous waste", payload["error"])
 
-    def test_wet_processing_update_can_derive_biogas_from_total(self) -> None:
-        opener = self.build_opener()
-        self.login(opener, "worker1")
+        operator = self.build_opener()
+        self.login(operator, "operator1")
+        status, payload = self.api_request(operator, "/api/operator/collections")
+        collection_id = payload["collections"][0]["id"]
 
         self.api_request(
-            opener,
-            "/api/entries",
+            operator,
+            "/api/processing-entries",
             method="POST",
             payload={
+                "collectionId": collection_id,
                 "wasteCategory": "Wet Waste",
-                "housingBlock": "AB1",
-                "roomNumber": "101",
-                "sourceLocation": "Food Outlets",
+                "wasteSubtype": "Food Waste",
                 "quantity": "10",
             },
         )
         self.api_request(
-            opener,
-            "/api/entries",
+            operator,
+            "/api/processing-entries",
             method="POST",
             payload={
+                "collectionId": collection_id,
                 "wasteCategory": "Wet Waste",
-                "housingBlock": "AB2",
-                "roomNumber": "102",
-                "sourceLocation": "Academic Area",
+                "wasteSubtype": "Mixed Organic Waste",
                 "quantity": "5",
             },
         )
 
         status, payload = self.api_request(
-            opener,
+            operator,
             "/api/wet-processing-updates",
             method="POST",
             payload={"compostQuantity": "9"},
@@ -148,25 +176,25 @@ class WasteAppIntegrationTests(unittest.TestCase):
         self.assertEqual(status, 201)
         self.assertIn("saved successfully", payload["message"])
 
-        status, payload = self.api_request(opener, "/api/wet-processing-status")
+        status, payload = self.api_request(operator, "/api/wet-processing-status")
         self.assertEqual(status, 200)
-        self.assertEqual(payload["totalWetCollected"], 15.0)
+        self.assertEqual(payload["totalWetProcessed"], 15.0)
         self.assertEqual(payload["latestUpdate"]["compostQuantity"], 9.0)
         self.assertEqual(payload["latestUpdate"]["biogasQuantity"], 6.0)
 
-    def test_dashboard_requires_admin(self) -> None:
-        worker_opener = self.build_opener()
-        self.login(worker_opener, "worker1")
-        status, _ = self.api_request(worker_opener, "/api/dashboard")
+    def test_admin_dashboard_requires_admin(self) -> None:
+        operator = self.build_opener()
+        self.login(operator, "operator1")
+        status, _ = self.api_request(operator, "/api/dashboard")
         self.assertEqual(status, 403)
 
-        admin_opener = self.build_opener()
-        self.login(admin_opener, "admin")
-        status, payload = self.api_request(admin_opener, "/api/dashboard")
+        admin = self.build_opener()
+        self.login(admin, "admin")
+        status, payload = self.api_request(admin, "/api/dashboard")
         self.assertEqual(status, 200)
         self.assertIn("metrics", payload)
-        self.assertIn("recentEntries", payload)
-        self.assertIn("wetProcessing", payload)
+        self.assertIn("recentCollections", payload)
+        self.assertIn("recentProcessingEntries", payload)
 
 
 if __name__ == "__main__":

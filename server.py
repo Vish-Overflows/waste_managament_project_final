@@ -16,10 +16,10 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
 
-BLOCKS = ["AB1", "AB2", "AB3", "AB4", "AB5", "AB6", "AB7"]
+BLOCKS = [f"HB {index}" for index in range(1, 8)]
 COMMON_ROOMS = ["101", "102", "103", "201", "202", "203"]
 ROOMS_BY_BLOCK = {block: COMMON_ROOMS[:] for block in BLOCKS}
-WASTE_CATEGORIES = ["Wet Waste", "Dry Waste", "Hazardous Waste"]
+PROCESSING_CATEGORIES = ["Dry Waste", "Wet Waste"]
 DRY_WASTE_TYPES = [
     "Plastic Bottles (Recyclable)",
     "Plastic Boxes",
@@ -33,25 +33,11 @@ DRY_WASTE_TYPES = [
     "Paper",
     "Cardboard",
 ]
-DRY_WASTE_LOCATIONS = [
-    "Guest House",
-    "Hostel",
-    "Academic Area",
-    "Administrative Area",
-    "Sports Complex",
-    "Food Court",
-]
-WET_WASTE_LOCATIONS = [
-    "Food Outlets",
-    "Academic Area",
-    "Hostel Mess",
-    "Guest House",
-    "Residential Area",
-]
-HAZARDOUS_WASTE_TYPES = ["Lab Waste", "Biomedical Waste"]
+WET_WASTE_TYPES = ["Mixed Organic Waste", "Food Waste", "Leaf and Garden Waste"]
 USERS = {
-    "worker1": {"password": "password", "role": "worker"},
-    "worker2": {"password": "password", "role": "worker"},
+    "staff1": {"password": "password", "role": "staff"},
+    "staff2": {"password": "password", "role": "staff"},
+    "operator1": {"password": "password", "role": "operator"},
     "admin": {"password": "password", "role": "admin"},
 }
 SESSION_COOKIE = "waste_app_session"
@@ -100,6 +86,19 @@ def init_db(db_path: Path) -> None:
     with sqlite3.connect(db_path) as connection:
         connection.execute(
             """
+            CREATE TABLE IF NOT EXISTS housing_collections (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                employee_id TEXT NOT NULL,
+                housing_block TEXT NOT NULL,
+                room_number TEXT NOT NULL,
+                collection_date TEXT NOT NULL,
+                status TEXT NOT NULL DEFAULT 'collected',
+                created_at TEXT NOT NULL
+            )
+            """
+        )
+        connection.execute(
+            """
             CREATE TABLE IF NOT EXISTS waste_entries (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 employee_id TEXT NOT NULL,
@@ -111,7 +110,8 @@ def init_db(db_path: Path) -> None:
                 quantity REAL NOT NULL,
                 start_date TEXT,
                 end_date TEXT,
-                entry_kind TEXT NOT NULL DEFAULT 'collection',
+                entry_kind TEXT NOT NULL DEFAULT 'segregation',
+                collection_id INTEGER,
                 created_at TEXT NOT NULL
             )
             """
@@ -143,24 +143,16 @@ def ensure_column(connection: sqlite3.Connection, table_name: str, column_name: 
 
 def migrate_waste_entries_schema(connection: sqlite3.Connection) -> None:
     ensure_column(connection, "waste_entries", "source_location", "TEXT")
-    ensure_column(connection, "waste_entries", "entry_kind", "TEXT NOT NULL DEFAULT 'collection'")
+    ensure_column(connection, "waste_entries", "entry_kind", "TEXT NOT NULL DEFAULT 'segregation'")
+    ensure_column(connection, "waste_entries", "collection_id", "INTEGER")
 
     columns = {
         row[1]: {
-            "type": row[2],
             "notnull": row[3],
         }
         for row in connection.execute("PRAGMA table_info(waste_entries)").fetchall()
     }
-
-    needs_rebuild = (
-        "waste_subtype" in columns and columns["waste_subtype"]["notnull"] == 1
-    ) or (
-        "housing_block" in columns and columns["housing_block"]["notnull"] == 0
-    ) or (
-        "room_number" in columns and columns["room_number"]["notnull"] == 0
-    )
-
+    needs_rebuild = "waste_subtype" in columns and columns["waste_subtype"]["notnull"] == 1
     if not needs_rebuild:
         return
 
@@ -177,7 +169,8 @@ def migrate_waste_entries_schema(connection: sqlite3.Connection) -> None:
             quantity REAL NOT NULL,
             start_date TEXT,
             end_date TEXT,
-            entry_kind TEXT NOT NULL DEFAULT 'collection',
+            entry_kind TEXT NOT NULL DEFAULT 'segregation',
+            collection_id INTEGER,
             created_at TEXT NOT NULL
         )
         """
@@ -196,6 +189,7 @@ def migrate_waste_entries_schema(connection: sqlite3.Connection) -> None:
             start_date,
             end_date,
             entry_kind,
+            collection_id,
             created_at
         )
         SELECT
@@ -209,7 +203,8 @@ def migrate_waste_entries_schema(connection: sqlite3.Connection) -> None:
             quantity,
             start_date,
             end_date,
-            COALESCE(entry_kind, 'collection'),
+            COALESCE(entry_kind, 'segregation'),
+            collection_id,
             created_at
         FROM waste_entries
         """
@@ -238,7 +233,7 @@ def create_server(host: str, port: int, base_dir: Path | None = None, db_path: P
 
 def build_handler(config: AppConfig) -> type[BaseHTTPRequestHandler]:
     class WasteAppHandler(BaseHTTPRequestHandler):
-        server_version = "WasteApp/2.0"
+        server_version = "WasteApp/3.0"
 
         def do_GET(self) -> None:
             parsed = urlparse(self.path)
@@ -255,14 +250,15 @@ def build_handler(config: AppConfig) -> type[BaseHTTPRequestHandler]:
             if path == "/api/config":
                 self.send_json(
                     {
-                        "wasteCategories": WASTE_CATEGORIES,
-                        "dryWasteTypes": DRY_WASTE_TYPES,
-                        "dryWasteLocations": DRY_WASTE_LOCATIONS,
-                        "wetWasteLocations": WET_WASTE_LOCATIONS,
-                        "hazardousWasteTypes": HAZARDOUS_WASTE_TYPES,
                         "blocks": BLOCKS,
                         "roomsByBlock": ROOMS_BY_BLOCK,
-                        "demoUsers": list(USERS.keys()),
+                        "processingCategories": PROCESSING_CATEGORIES,
+                        "dryWasteTypes": DRY_WASTE_TYPES,
+                        "wetWasteTypes": WET_WASTE_TYPES,
+                        "demoUsers": [
+                            {"username": username, "role": data["role"]}
+                            for username, data in USERS.items()
+                        ],
                     }
                 )
                 return
@@ -282,6 +278,24 @@ def build_handler(config: AppConfig) -> type[BaseHTTPRequestHandler]:
                         }
                     )
                 return
+            if path == "/api/operator/collections":
+                session = self.require_session()
+                if not session:
+                    return
+                if session["role"] not in {"operator", "admin"}:
+                    self.send_error_json(HTTPStatus.FORBIDDEN, "Operator access required.")
+                    return
+                self.send_json({"collections": self.load_operator_collections()})
+                return
+            if path == "/api/wet-processing-status":
+                session = self.require_session()
+                if not session:
+                    return
+                if session["role"] not in {"operator", "admin"}:
+                    self.send_error_json(HTTPStatus.FORBIDDEN, "Operator access required.")
+                    return
+                self.send_json(self.load_wet_processing_status())
+                return
             if path == "/api/dashboard":
                 session = self.require_session()
                 if not session:
@@ -290,12 +304,6 @@ def build_handler(config: AppConfig) -> type[BaseHTTPRequestHandler]:
                     self.send_error_json(HTTPStatus.FORBIDDEN, "Admin access required.")
                     return
                 self.send_json(self.load_dashboard())
-                return
-            if path == "/api/wet-processing-status":
-                session = self.require_session()
-                if not session:
-                    return
-                self.send_json(self.load_wet_processing_status())
                 return
             self.send_error_json(HTTPStatus.NOT_FOUND, "Resource not found.")
 
@@ -333,30 +341,46 @@ def build_handler(config: AppConfig) -> type[BaseHTTPRequestHandler]:
                     cookie=f"{SESSION_COOKIE}=deleted; HttpOnly; Path=/; Max-Age=0; SameSite=Lax",
                 )
                 return
-            if path == "/api/entries":
+            if path == "/api/staff-collections":
                 session = self.require_session()
                 if not session:
+                    return
+                if session["role"] != "staff":
+                    self.send_error_json(HTTPStatus.FORBIDDEN, "Staff access required.")
                     return
                 payload = self.read_json_body()
                 if payload is None:
                     return
-                validation_error, entry = self.validate_collection_entry(payload, session)
+                validation_error, entry = self.validate_staff_collection(payload, session)
                 if validation_error:
                     self.send_error_json(HTTPStatus.BAD_REQUEST, validation_error)
                     return
-                try:
-                    self.insert_entry(entry)
-                except sqlite3.IntegrityError:
-                    self.send_error_json(
-                        HTTPStatus.INTERNAL_SERVER_ERROR,
-                        "Entry could not be saved because the stored database schema does not match the form data.",
-                    )
+                self.insert_staff_collection(entry)
+                self.send_json({"message": "Housing collection marked successfully."}, status=HTTPStatus.CREATED)
+                return
+            if path == "/api/processing-entries":
+                session = self.require_session()
+                if not session:
                     return
-                self.send_json({"message": "Waste entry saved successfully."}, status=HTTPStatus.CREATED)
+                if session["role"] != "operator":
+                    self.send_error_json(HTTPStatus.FORBIDDEN, "Operator access required.")
+                    return
+                payload = self.read_json_body()
+                if payload is None:
+                    return
+                validation_error, entry = self.validate_processing_entry(payload, session)
+                if validation_error:
+                    self.send_error_json(HTTPStatus.BAD_REQUEST, validation_error)
+                    return
+                self.insert_processing_entry(entry)
+                self.send_json({"message": "Segregation entry saved successfully."}, status=HTTPStatus.CREATED)
                 return
             if path == "/api/wet-processing-updates":
                 session = self.require_session()
                 if not session:
+                    return
+                if session["role"] != "operator":
+                    self.send_error_json(HTTPStatus.FORBIDDEN, "Operator access required.")
                     return
                 payload = self.read_json_body()
                 if payload is None:
@@ -366,10 +390,7 @@ def build_handler(config: AppConfig) -> type[BaseHTTPRequestHandler]:
                     self.send_error_json(HTTPStatus.BAD_REQUEST, validation_error)
                     return
                 self.insert_wet_processing_update(update)
-                self.send_json(
-                    {"message": "Wet waste processing update saved successfully."},
-                    status=HTTPStatus.CREATED,
-                )
+                self.send_json({"message": "Compost update saved successfully."}, status=HTTPStatus.CREATED)
                 return
             self.send_error_json(HTTPStatus.NOT_FOUND, "Resource not found.")
 
@@ -435,70 +456,79 @@ def build_handler(config: AppConfig) -> type[BaseHTTPRequestHandler]:
                 return f"{field_label.capitalize()} must be a positive number.", None
             return None, parsed
 
-        def validate_collection_entry(
+        def validate_staff_collection(
             self, payload: dict[str, Any], session: dict[str, Any]
         ) -> tuple[str | None, dict[str, Any] | None]:
-            category = str(payload.get("wasteCategory", "")).strip()
-            subtype = str(payload.get("wasteSubtype", "")).strip() or None
-            source_location = str(payload.get("sourceLocation", "")).strip() or None
-            block = str(payload.get("housingBlock", "")).strip() or None
-            room = str(payload.get("roomNumber", "")).strip() or None
-            start_date = str(payload.get("startDate", "")).strip() or None
-            end_date = str(payload.get("endDate", "")).strip() or None
-
-            if category not in WASTE_CATEGORIES:
-                return "Select a valid waste category.", None
-
-            quantity_error, quantity = self.parse_positive_number(payload.get("quantity"), "waste quantity")
-            if quantity_error:
-                return quantity_error, None
+            block = str(payload.get("housingBlock", "")).strip()
+            room = str(payload.get("roomNumber", "")).strip()
+            collection_date = str(payload.get("collectionDate", "")).strip()
 
             if block not in BLOCKS:
-                return "Select a valid academic block.", None
-            valid_rooms = ROOMS_BY_BLOCK.get(block, [])
-            if room not in valid_rooms:
+                return "Select a valid housing block.", None
+            if room not in ROOMS_BY_BLOCK.get(block, []):
                 return "Select a valid room number.", None
-
-            if category == "Dry Waste":
-                if subtype not in DRY_WASTE_TYPES:
-                    return "Select a valid dry waste type.", None
-                if source_location not in DRY_WASTE_LOCATIONS:
-                    return "Select a valid dry waste location.", None
-                start_date = None
-                end_date = None
-            elif category == "Wet Waste":
-                if source_location not in WET_WASTE_LOCATIONS:
-                    return "Select a valid wet waste location.", None
-                subtype = None
-                start_date = None
-                end_date = None
-            elif category == "Hazardous Waste":
-                if subtype not in HAZARDOUS_WASTE_TYPES:
-                    return "Select a valid hazardous waste type.", None
-                if not start_date or not end_date:
-                    return "Start date and end date are required for hazardous waste.", None
-                try:
-                    start = date.fromisoformat(start_date)
-                    end = date.fromisoformat(end_date)
-                except ValueError:
-                    return "Enter valid hazardous waste dates.", None
-                if end < start:
-                    return "End date cannot be earlier than start date.", None
-                source_location = None
+            try:
+                date.fromisoformat(collection_date)
+            except ValueError:
+                return "Select a valid collection date.", None
 
             return (
                 None,
                 {
                     "employee_id": session["employee_id"],
-                    "waste_category": category,
-                    "waste_subtype": subtype,
-                    "source_location": source_location,
                     "housing_block": block,
                     "room_number": room,
+                    "collection_date": collection_date,
+                    "status": "collected",
+                    "created_at": datetime.now().isoformat(timespec="seconds"),
+                },
+            )
+
+        def validate_processing_entry(
+            self, payload: dict[str, Any], session: dict[str, Any]
+        ) -> tuple[str | None, dict[str, Any] | None]:
+            collection_id_raw = payload.get("collectionId")
+            try:
+                collection_id = int(collection_id_raw)
+            except (TypeError, ValueError):
+                return "Select a valid collected housing entry.", None
+
+            category = str(payload.get("wasteCategory", "")).strip()
+            subtype = str(payload.get("wasteSubtype", "")).strip()
+            quantity_error, quantity = self.parse_positive_number(payload.get("quantity"), "waste quantity")
+            if quantity_error:
+                return quantity_error, None
+
+            if category not in PROCESSING_CATEGORIES:
+                return "Select a valid waste category.", None
+            valid_subtypes = DRY_WASTE_TYPES if category == "Dry Waste" else WET_WASTE_TYPES
+            if subtype not in valid_subtypes:
+                return "Select a valid waste sub type.", None
+
+            with sqlite3.connect(config.db_path) as connection:
+                connection.row_factory = sqlite3.Row
+                collection = connection.execute(
+                    """
+                    SELECT id, housing_block, room_number
+                    FROM housing_collections
+                    WHERE id = ?
+                    """,
+                    (collection_id,),
+                ).fetchone()
+
+            if collection is None:
+                return "Selected housing collection could not be found.", None
+
+            return (
+                None,
+                {
+                    "employee_id": session["employee_id"],
+                    "collection_id": collection_id,
+                    "waste_category": category,
+                    "waste_subtype": subtype,
+                    "housing_block": collection["housing_block"],
+                    "room_number": collection["room_number"],
                     "quantity": quantity,
-                    "start_date": start_date,
-                    "end_date": end_date,
-                    "entry_kind": "collection",
                     "created_at": datetime.now().isoformat(timespec="seconds"),
                 },
             )
@@ -507,51 +537,57 @@ def build_handler(config: AppConfig) -> type[BaseHTTPRequestHandler]:
             self, payload: dict[str, Any], session: dict[str, Any]
         ) -> tuple[str | None, dict[str, Any] | None]:
             with sqlite3.connect(config.db_path) as connection:
-                total_wet = total_wet_collected(connection)
+                total_wet = total_wet_processed(connection)
 
             if total_wet <= 0:
-                return "No wet waste has been logged yet, so a processing update cannot be saved.", None
+                return "No wet waste segregation entries exist yet.", None
 
-            compost_raw = payload.get("compostQuantity")
-            biogas_raw = payload.get("biogasQuantity")
+            compost_error, compost_quantity = self.parse_positive_number(
+                payload.get("compostQuantity"), "compost quantity"
+            )
+            if compost_error:
+                return compost_error, None
+            assert compost_quantity is not None
+            if compost_quantity > total_wet:
+                return "Compost quantity cannot exceed total wet waste processed so far.", None
 
-            compost = parse_optional_float(compost_raw)
-            biogas = parse_optional_float(biogas_raw)
-
-            if compost is None and biogas is None:
-                return "Enter compost quantity, biogas quantity, or both.", None
-            if compost is not None and compost < 0:
-                return "Compost quantity cannot be negative.", None
-            if biogas is not None and biogas < 0:
-                return "Biogas quantity cannot be negative.", None
-
-            if compost is not None and biogas is None:
-                biogas = round(total_wet - compost, 2)
-            elif biogas is not None and compost is None:
-                compost = round(total_wet - biogas, 2)
-
-            assert compost is not None
-            assert biogas is not None
-
-            if compost < 0 or biogas < 0:
-                return "Processing quantities cannot exceed total wet waste logged so far.", None
-            if compost > total_wet or biogas > total_wet:
-                return "Processing quantities cannot exceed total wet waste logged so far.", None
-            if abs((compost + biogas) - total_wet) > 0.05:
-                return "Compost and biogas quantities must add up to the total wet waste logged so far.", None
-
+            biogas_quantity = round(total_wet - compost_quantity, 2)
             return (
                 None,
                 {
                     "employee_id": session["employee_id"],
-                    "compost_quantity": round(compost, 2),
-                    "biogas_quantity": round(biogas, 2),
+                    "compost_quantity": round(compost_quantity, 2),
+                    "biogas_quantity": biogas_quantity,
                     "total_wet_reference": round(total_wet, 2),
                     "created_at": datetime.now().isoformat(timespec="seconds"),
                 },
             )
 
-        def insert_entry(self, entry: dict[str, Any]) -> None:
+        def insert_staff_collection(self, entry: dict[str, Any]) -> None:
+            with sqlite3.connect(config.db_path) as connection:
+                connection.execute(
+                    """
+                    INSERT INTO housing_collections (
+                        employee_id,
+                        housing_block,
+                        room_number,
+                        collection_date,
+                        status,
+                        created_at
+                    ) VALUES (?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        entry["employee_id"],
+                        entry["housing_block"],
+                        entry["room_number"],
+                        entry["collection_date"],
+                        entry["status"],
+                        entry["created_at"],
+                    ),
+                )
+                connection.commit()
+
+        def insert_processing_entry(self, entry: dict[str, Any]) -> None:
             with sqlite3.connect(config.db_path) as connection:
                 connection.execute(
                     """
@@ -566,20 +602,22 @@ def build_handler(config: AppConfig) -> type[BaseHTTPRequestHandler]:
                         start_date,
                         end_date,
                         entry_kind,
+                        collection_id,
                         created_at
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     (
                         entry["employee_id"],
                         entry["waste_category"],
                         entry["waste_subtype"],
-                        entry["source_location"],
+                        None,
                         entry["housing_block"],
                         entry["room_number"],
                         entry["quantity"],
-                        entry["start_date"],
-                        entry["end_date"],
-                        entry["entry_kind"],
+                        None,
+                        None,
+                        "segregation",
+                        entry["collection_id"],
                         entry["created_at"],
                     ),
                 )
@@ -607,10 +645,48 @@ def build_handler(config: AppConfig) -> type[BaseHTTPRequestHandler]:
                 )
                 connection.commit()
 
+        def load_operator_collections(self) -> list[dict[str, Any]]:
+            with sqlite3.connect(config.db_path) as connection:
+                connection.row_factory = sqlite3.Row
+                rows = connection.execute(
+                    """
+                    SELECT
+                        hc.id,
+                        hc.employee_id,
+                        hc.housing_block,
+                        hc.room_number,
+                        hc.collection_date,
+                        hc.status,
+                        hc.created_at,
+                        COUNT(we.id) AS processed_entries_count,
+                        ROUND(COALESCE(SUM(we.quantity), 0), 2) AS processed_weight
+                    FROM housing_collections hc
+                    LEFT JOIN waste_entries we ON we.collection_id = hc.id
+                    GROUP BY hc.id
+                    ORDER BY hc.id DESC
+                    LIMIT 30
+                    """
+                ).fetchall()
+
+            return [
+                {
+                    "id": row["id"],
+                    "employeeId": row["employee_id"],
+                    "housingBlock": row["housing_block"],
+                    "roomNumber": row["room_number"],
+                    "collectionDate": row["collection_date"],
+                    "status": row["status"],
+                    "timestamp": row["created_at"],
+                    "processedEntriesCount": int(row["processed_entries_count"]),
+                    "processedWeight": float(row["processed_weight"]),
+                }
+                for row in rows
+            ]
+
         def load_wet_processing_status(self) -> dict[str, Any]:
             with sqlite3.connect(config.db_path) as connection:
                 connection.row_factory = sqlite3.Row
-                total_wet = total_wet_collected(connection)
+                total_wet = total_wet_processed(connection)
                 latest = connection.execute(
                     """
                     SELECT employee_id, compost_quantity, biogas_quantity, total_wet_reference, created_at
@@ -621,141 +697,104 @@ def build_handler(config: AppConfig) -> type[BaseHTTPRequestHandler]:
                 ).fetchone()
 
             latest_update = None
-            allocated_compost = 0.0
-            allocated_biogas = 0.0
-            reference_total = round(total_wet, 2)
             if latest:
-                allocated_compost = float(latest["compost_quantity"])
-                allocated_biogas = float(latest["biogas_quantity"])
-                reference_total = float(latest["total_wet_reference"])
                 latest_update = {
                     "employeeId": latest["employee_id"],
-                    "compostQuantity": allocated_compost,
-                    "biogasQuantity": allocated_biogas,
-                    "totalWetReference": reference_total,
+                    "compostQuantity": float(latest["compost_quantity"]),
+                    "biogasQuantity": float(latest["biogas_quantity"]),
+                    "totalWetReference": float(latest["total_wet_reference"]),
                     "timestamp": latest["created_at"],
                 }
 
             return {
-                "totalWetCollected": round(total_wet, 2),
+                "totalWetProcessed": round(total_wet, 2),
                 "latestUpdate": latest_update,
-                "pendingAllocation": round(max(total_wet - allocated_compost - allocated_biogas, 0), 2),
             }
 
         def load_dashboard(self) -> dict[str, Any]:
             today = datetime.now().date().isoformat()
             with sqlite3.connect(config.db_path) as connection:
                 connection.row_factory = sqlite3.Row
-                metrics_row = connection.execute(
+                metrics = connection.execute(
                     """
                     SELECT
-                        COALESCE(SUM(quantity), 0) AS total_weight,
-                        COALESCE(SUM(CASE WHEN waste_category = 'Wet Waste' THEN quantity END), 0) AS wet_weight,
-                        COALESCE(SUM(CASE WHEN waste_category = 'Dry Waste' THEN quantity END), 0) AS dry_weight,
-                        COALESCE(SUM(CASE WHEN waste_category = 'Hazardous Waste' THEN quantity END), 0) AS hazardous_weight,
-                        COUNT(*) AS entries_count
-                    FROM waste_entries
-                    WHERE COALESCE(entry_kind, 'collection') = 'collection'
-                    AND substr(created_at, 1, 10) = ?
+                        (SELECT COUNT(*) FROM housing_collections WHERE collection_date = ?) AS collections_today,
+                        (SELECT COUNT(*) FROM waste_entries WHERE substr(created_at, 1, 10) = ?) AS processed_entries_today,
+                        (SELECT COALESCE(SUM(quantity), 0) FROM waste_entries WHERE waste_category = 'Dry Waste' AND substr(created_at, 1, 10) = ?) AS dry_today,
+                        (SELECT COALESCE(SUM(quantity), 0) FROM waste_entries WHERE waste_category = 'Wet Waste' AND substr(created_at, 1, 10) = ?) AS wet_today,
+                        (SELECT COALESCE(SUM(quantity), 0) FROM waste_entries WHERE substr(created_at, 1, 10) = ?) AS total_processed_today
                     """,
-                    (today,),
+                    (today, today, today, today, today),
                 ).fetchone()
+
                 breakdown_rows = connection.execute(
                     """
                     SELECT waste_category, COUNT(*) AS entries_count, ROUND(COALESCE(SUM(quantity), 0), 2) AS total_weight
                     FROM waste_entries
-                    WHERE COALESCE(entry_kind, 'collection') = 'collection'
                     GROUP BY waste_category
                     ORDER BY waste_category
                     """
                 ).fetchall()
-                recent_rows = connection.execute(
+
+                recent_collections = connection.execute(
                     """
-                    SELECT
-                        employee_id,
-                        waste_category,
-                        waste_subtype,
-                        source_location,
-                        housing_block,
-                        room_number,
-                        quantity,
-                        start_date,
-                        end_date,
-                        created_at
-                    FROM waste_entries
-                    WHERE COALESCE(entry_kind, 'collection') = 'collection'
+                    SELECT employee_id, housing_block, room_number, collection_date, created_at
+                    FROM housing_collections
                     ORDER BY id DESC
                     LIMIT 10
                     """
                 ).fetchall()
 
-                total_wet = total_wet_collected(connection)
-                latest_processing = connection.execute(
+                recent_processing = connection.execute(
                     """
-                    SELECT employee_id, compost_quantity, biogas_quantity, total_wet_reference, created_at
-                    FROM wet_processing_updates
+                    SELECT employee_id, waste_category, waste_subtype, housing_block, room_number, quantity, created_at
+                    FROM waste_entries
                     ORDER BY id DESC
-                    LIMIT 1
+                    LIMIT 10
                     """
-                ).fetchone()
+                ).fetchall()
 
-            metrics = {
-                "totalWasteToday": round(float(metrics_row["total_weight"]), 2),
-                "wetWasteToday": round(float(metrics_row["wet_weight"]), 2),
-                "dryWasteToday": round(float(metrics_row["dry_weight"]), 2),
-                "hazardousWasteToday": round(float(metrics_row["hazardous_weight"]), 2),
-                "entriesToday": int(metrics_row["entries_count"]),
-            }
-            breakdown = [
-                {
-                    "wasteCategory": row["waste_category"],
-                    "entriesCount": int(row["entries_count"]),
-                    "totalWeight": float(row["total_weight"]),
-                }
-                for row in breakdown_rows
-            ]
-            recent_entries = [
-                {
-                    "employeeId": row["employee_id"],
-                    "wasteCategory": row["waste_category"],
-                    "wasteSubtype": row["waste_subtype"],
-                    "location": derive_location_label(row["source_location"], row["housing_block"], row["room_number"]),
-                    "quantity": float(row["quantity"]),
-                    "startDate": row["start_date"],
-                    "endDate": row["end_date"],
-                    "timestamp": row["created_at"],
-                }
-                for row in recent_rows
-            ]
+                wet_status = self.load_wet_processing_status()
 
-            latest_processing_update = None
-            if latest_processing:
-                latest_processing_update = {
-                    "employeeId": latest_processing["employee_id"],
-                    "compostQuantity": float(latest_processing["compost_quantity"]),
-                    "biogasQuantity": float(latest_processing["biogas_quantity"]),
-                    "totalWetReference": float(latest_processing["total_wet_reference"]),
-                    "timestamp": latest_processing["created_at"],
-                }
-
-            wet_processing = {
-                "totalWetCollected": round(total_wet, 2),
-                "latestUpdate": latest_processing_update,
-                "pendingAllocation": round(
-                    max(
-                        total_wet
-                        - (float(latest_processing["compost_quantity"]) if latest_processing else 0.0)
-                        - (float(latest_processing["biogas_quantity"]) if latest_processing else 0.0),
-                        0,
-                    ),
-                    2,
-                ),
-            }
             return {
-                "metrics": metrics,
-                "breakdown": breakdown,
-                "recentEntries": recent_entries,
-                "wetProcessing": wet_processing,
+                "metrics": {
+                    "collectionsToday": int(metrics["collections_today"]),
+                    "processedEntriesToday": int(metrics["processed_entries_today"]),
+                    "dryWasteToday": round(float(metrics["dry_today"]), 2),
+                    "wetWasteToday": round(float(metrics["wet_today"]), 2),
+                    "totalProcessedToday": round(float(metrics["total_processed_today"]), 2),
+                },
+                "breakdown": [
+                    {
+                        "wasteCategory": row["waste_category"],
+                        "entriesCount": int(row["entries_count"]),
+                        "totalWeight": float(row["total_weight"]),
+                    }
+                    for row in breakdown_rows
+                ],
+                "recentCollections": [
+                    {
+                        "employeeId": row["employee_id"],
+                        "housingBlock": row["housing_block"],
+                        "roomNumber": row["room_number"],
+                        "collectionDate": row["collection_date"],
+                        "timestamp": row["created_at"],
+                    }
+                    for row in recent_collections
+                ],
+                "recentProcessingEntries": [
+                    {
+                        "employeeId": row["employee_id"],
+                        "wasteCategory": row["waste_category"],
+                        "wasteSubtype": row["waste_subtype"],
+                        "housingBlock": row["housing_block"],
+                        "roomNumber": row["room_number"],
+                        "quantity": float(row["quantity"]),
+                        "timestamp": row["created_at"],
+                    }
+                    for row in recent_processing
+                ],
+                "wetProcessing": wet_status,
             }
 
         def send_json(
@@ -780,39 +819,19 @@ def build_handler(config: AppConfig) -> type[BaseHTTPRequestHandler]:
     return WasteAppHandler
 
 
-def parse_optional_float(value: Any) -> float | None:
-    if value in (None, ""):
-        return None
-    try:
-        return float(value)
-    except (TypeError, ValueError):
-        return -1.0
-
-
-def total_wet_collected(connection: sqlite3.Connection) -> float:
+def total_wet_processed(connection: sqlite3.Connection) -> float:
     row = connection.execute(
         """
         SELECT COALESCE(SUM(quantity), 0)
         FROM waste_entries
         WHERE waste_category = 'Wet Waste'
-        AND COALESCE(entry_kind, 'collection') = 'collection'
         """
     ).fetchone()
     return float(row[0] or 0)
 
 
-def derive_location_label(source_location: str | None, housing_block: str | None, room_number: str | None) -> str:
-    if source_location:
-        return source_location
-    if housing_block and room_number:
-        return f"{housing_block} / {room_number}"
-    if housing_block:
-        return housing_block
-    return "Not specified"
-
-
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Campus waste management demo app")
+    parser = argparse.ArgumentParser(description="Campus waste management portal")
     parser.add_argument("--host", default="127.0.0.1", help="Host interface to bind")
     parser.add_argument(
         "--port",

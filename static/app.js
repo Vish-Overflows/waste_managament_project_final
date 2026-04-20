@@ -1,7 +1,8 @@
 const state = {
   config: null,
   user: null,
-  wetProcessingStatus: null,
+  operatorCollections: [],
+  wetStatus: null,
 };
 
 const elements = {
@@ -14,44 +15,35 @@ const elements = {
   welcomeLine: document.getElementById("welcomeLine"),
   roleLine: document.getElementById("roleLine"),
   logoutButton: document.getElementById("logoutButton"),
-  entryTabButton: document.getElementById("entryTabButton"),
-  dashboardTabButton: document.getElementById("dashboardTabButton"),
-  refreshDashboardButton: document.getElementById("refreshDashboardButton"),
-  entrySection: document.getElementById("entrySection"),
-  dashboardSection: document.getElementById("dashboardSection"),
-  entryForm: document.getElementById("entryForm"),
-  wasteCategory: document.getElementById("wasteCategory"),
-  wetActionContainer: document.getElementById("wetActionContainer"),
-  wetAction: document.getElementById("wetAction"),
-  collectionFields: document.getElementById("collectionFields"),
-  wetUpdateSection: document.getElementById("wetUpdateSection"),
-  dryTypeField: document.getElementById("dryTypeField"),
-  sourceLocationField: document.getElementById("sourceLocationField"),
-  sourceLocationLabel: document.getElementById("sourceLocationLabel"),
-  housingBlockField: document.getElementById("housingBlockField"),
-  roomNumberField: document.getElementById("roomNumberField"),
-  hazardousTypeField: document.getElementById("hazardousTypeField"),
-  hazardousDates: document.getElementById("hazardousDates"),
-  quantityField: document.getElementById("quantityField"),
-  wasteSubtype: document.getElementById("wasteSubtype"),
-  sourceLocation: document.getElementById("sourceLocation"),
-  housingBlock: document.getElementById("housingBlock"),
-  roomNumber: document.getElementById("roomNumber"),
-  hazardousSubtype: document.getElementById("hazardousSubtype"),
-  startDate: document.getElementById("startDate"),
-  endDate: document.getElementById("endDate"),
-  quantity: document.getElementById("quantity"),
+  staffSection: document.getElementById("staffSection"),
+  operatorSection: document.getElementById("operatorSection"),
+  adminSection: document.getElementById("adminSection"),
+  staffForm: document.getElementById("staffForm"),
+  staffHousingBlock: document.getElementById("staffHousingBlock"),
+  staffRoomNumber: document.getElementById("staffRoomNumber"),
+  staffCollectionDate: document.getElementById("staffCollectionDate"),
+  staffMessage: document.getElementById("staffMessage"),
+  operatorCollectionsBody: document.getElementById("operatorCollectionsBody"),
+  operatorForm: document.getElementById("operatorForm"),
+  operatorMode: document.getElementById("operatorMode"),
+  segregationFields: document.getElementById("segregationFields"),
+  compostFields: document.getElementById("compostFields"),
+  collectionSelect: document.getElementById("collectionSelect"),
+  processingCategory: document.getElementById("processingCategory"),
+  processingSubtype: document.getElementById("processingSubtype"),
+  processingQuantity: document.getElementById("processingQuantity"),
   compostQuantity: document.getElementById("compostQuantity"),
-  biogasQuantity: document.getElementById("biogasQuantity"),
   wetTotalValue: document.getElementById("wetTotalValue"),
   wetCompostValue: document.getElementById("wetCompostValue"),
   wetBiogasValue: document.getElementById("wetBiogasValue"),
-  submitButton: document.getElementById("submitButton"),
-  entryMessage: document.getElementById("entryMessage"),
+  operatorSubmitButton: document.getElementById("operatorSubmitButton"),
+  operatorMessage: document.getElementById("operatorMessage"),
+  refreshDashboardButton: document.getElementById("refreshDashboardButton"),
   metricsGrid: document.getElementById("metricsGrid"),
   breakdownList: document.getElementById("breakdownList"),
   wetProcessingPanel: document.getElementById("wetProcessingPanel"),
-  recentEntriesBody: document.getElementById("recentEntriesBody"),
+  recentCollectionsBody: document.getElementById("recentCollectionsBody"),
+  recentProcessingBody: document.getElementById("recentProcessingBody"),
   dashboardMessage: document.getElementById("dashboardMessage"),
   credentialChips: document.querySelectorAll(".credential-chip"),
 };
@@ -99,151 +91,109 @@ function formatKg(value) {
   return `${Number(value || 0).toFixed(2)} kg`;
 }
 
+function todayIsoDate() {
+  return new Date().toISOString().slice(0, 10);
+}
+
+function populateStaticOptions() {
+  populateSelect(elements.staffHousingBlock, state.config.blocks, "Select housing block");
+  populateSelect(elements.staffRoomNumber, [], "Select room number");
+  populateSelect(elements.processingCategory, state.config.processingCategories, "Select waste category");
+  populateSelect(elements.processingSubtype, [], "Select waste sub type");
+  elements.staffCollectionDate.value = todayIsoDate();
+}
+
+function updateStaffRooms() {
+  const block = elements.staffHousingBlock.value;
+  const rooms = block ? (state.config.roomsByBlock[block] || []) : [];
+  populateSelect(elements.staffRoomNumber, rooms, "Select room number");
+  elements.staffRoomNumber.disabled = !block;
+}
+
+function updateProcessingSubtype() {
+  const category = elements.processingCategory.value;
+  let values = [];
+  if (category === "Dry Waste") {
+    values = state.config.dryWasteTypes;
+  } else if (category === "Wet Waste") {
+    values = state.config.wetWasteTypes;
+  }
+  populateSelect(elements.processingSubtype, values, "Select waste sub type");
+}
+
 function renderAppView() {
   const isAuthenticated = Boolean(state.user);
   elements.loginView.classList.toggle("hidden", isAuthenticated);
   elements.appView.classList.toggle("hidden", !isAuthenticated);
-
   if (!isAuthenticated) {
     return;
   }
 
   elements.welcomeLine.textContent = `Welcome, ${state.user.employee_id}`;
-  elements.roleLine.textContent =
-    state.user.role === "admin"
-      ? "Role: Administrator"
-      : "Role: Sanitation staff";
+  elements.roleLine.textContent = `Role: ${state.user.role.charAt(0).toUpperCase()}${state.user.role.slice(1)}`;
 
-  const isAdmin = state.user.role === "admin";
-  elements.dashboardTabButton.classList.toggle("hidden", !isAdmin);
-  showTab("entry");
+  elements.staffSection.classList.toggle("hidden", state.user.role !== "staff");
+  elements.operatorSection.classList.toggle("hidden", state.user.role !== "operator");
+  elements.adminSection.classList.toggle("hidden", state.user.role !== "admin");
 }
 
-function showTab(tabName) {
-  const showDashboard = tabName === "dashboard";
-  elements.entrySection.classList.toggle("hidden", showDashboard);
-  elements.dashboardSection.classList.toggle("hidden", !showDashboard);
-  elements.entryTabButton.classList.toggle("active", !showDashboard);
-  elements.dashboardTabButton.classList.toggle("active", showDashboard);
-}
+function renderOperatorCollections(collections) {
+  state.operatorCollections = collections;
+  elements.operatorCollectionsBody.innerHTML = "";
+  populateSelect(elements.collectionSelect, [], "Select collected entry");
 
-function populateStaticOptions() {
-  populateSelect(elements.wasteCategory, state.config.wasteCategories, "Select waste category");
-  populateSelect(elements.wasteSubtype, state.config.dryWasteTypes, "Select dry waste type");
-  populateSelect(elements.sourceLocation, [], "Select location");
-  populateSelect(elements.housingBlock, state.config.blocks, "Select academic block");
-  populateSelect(elements.roomNumber, [], "Select room number");
-  populateSelect(elements.hazardousSubtype, state.config.hazardousWasteTypes, "Select hazardous waste type");
-  elements.roomNumber.disabled = true;
-}
-
-function clearCollectionInputs() {
-  elements.wasteSubtype.value = "";
-  elements.sourceLocation.value = "";
-  elements.housingBlock.value = "";
-  elements.roomNumber.value = "";
-  populateSelect(elements.roomNumber, [], "Select room number");
-  elements.roomNumber.disabled = true;
-  elements.hazardousSubtype.value = "";
-  elements.startDate.value = "";
-  elements.endDate.value = "";
-  elements.quantity.value = "";
-}
-
-function setRequired(element, required) {
-  element.required = required;
-}
-
-function updateFormForCategory() {
-  const category = elements.wasteCategory.value;
-  const isWet = category === "Wet Waste";
-  const isDry = category === "Dry Waste";
-  const isHazardous = category === "Hazardous Waste";
-  const isWetWeekly = isWet && elements.wetAction.value === "weekly_update";
-  const showCollection = Boolean(category) && !isWetWeekly;
-
-  elements.wetActionContainer.classList.toggle("hidden", !isWet);
-  elements.collectionFields.classList.toggle("hidden", !showCollection);
-  elements.wetUpdateSection.classList.toggle("hidden", !isWetWeekly);
-  elements.submitButton.classList.toggle("hidden", !category);
-
-  elements.dryTypeField.classList.toggle("hidden", !isDry);
-  elements.sourceLocationField.classList.toggle("hidden", !(isDry || (isWet && !isWetWeekly)));
-  elements.housingBlockField.classList.toggle("hidden", !showCollection);
-  elements.roomNumberField.classList.toggle("hidden", !showCollection);
-  elements.hazardousTypeField.classList.toggle("hidden", !isHazardous);
-  elements.hazardousDates.classList.toggle("hidden", !isHazardous);
-  elements.quantityField.classList.toggle("hidden", !showCollection);
-
-  setRequired(elements.wasteSubtype, isDry);
-  setRequired(elements.sourceLocation, isDry || (isWet && !isWetWeekly));
-  setRequired(elements.housingBlock, showCollection);
-  setRequired(elements.roomNumber, showCollection);
-  setRequired(elements.hazardousSubtype, isHazardous);
-  setRequired(elements.startDate, isHazardous);
-  setRequired(elements.endDate, isHazardous);
-  setRequired(elements.quantity, showCollection);
-
-  if (isDry) {
-    populateSelect(elements.sourceLocation, state.config.dryWasteLocations, "Select dry waste location");
-    elements.sourceLocationLabel.textContent = "Dry Waste Location";
-  } else if (isWet && !isWetWeekly) {
-    populateSelect(elements.sourceLocation, state.config.wetWasteLocations, "Select wet waste location");
-    elements.sourceLocationLabel.textContent = "Wet Waste Location";
-  } else if (!isDry && !isWet) {
-    populateSelect(elements.sourceLocation, [], "Select location");
+  if (collections.length === 0) {
+    const row = document.createElement("tr");
+    row.innerHTML = '<td colspan="6" class="muted-text">No staff collections have been marked yet.</td>';
+    elements.operatorCollectionsBody.appendChild(row);
+    return;
   }
 
-  elements.submitButton.textContent = isWetWeekly ? "Save Weekly Update" : "Save Entry";
+  collections.forEach((collection) => {
+    const option = document.createElement("option");
+    option.value = String(collection.id);
+    option.textContent = `${collection.housingBlock} / ${collection.roomNumber} / ${collection.collectionDate}`;
+    elements.collectionSelect.appendChild(option);
 
-  if (isWetWeekly) {
-    loadWetProcessingStatus();
-  }
+    const row = document.createElement("tr");
+    row.innerHTML = `
+      <td>${collection.collectionDate}</td>
+      <td>${collection.employeeId}</td>
+      <td>${collection.housingBlock}</td>
+      <td>${collection.roomNumber}</td>
+      <td>${collection.processedEntriesCount}</td>
+      <td>${formatKg(collection.processedWeight)}</td>
+    `;
+    elements.operatorCollectionsBody.appendChild(row);
+  });
 }
 
-function updateRooms() {
-  const block = elements.housingBlock.value;
-  const hasBlock = Boolean(block);
-  const rooms = hasBlock ? (state.config.roomsByBlock[block] || []) : [];
-  populateSelect(
-    elements.roomNumber,
-    rooms,
-    "Select room number"
-  );
-  elements.roomNumber.disabled = !hasBlock;
-}
-
-function renderWetProcessingStatus(status) {
-  state.wetProcessingStatus = status;
-  elements.wetTotalValue.textContent = formatKg(status.totalWetCollected);
+function renderWetStatus(status) {
+  state.wetStatus = status;
+  elements.wetTotalValue.textContent = formatKg(status.totalWetProcessed);
   elements.wetCompostValue.textContent = status.latestUpdate
     ? formatKg(status.latestUpdate.compostQuantity)
     : formatKg(0);
-  elements.wetBiogasValue.textContent = status.latestUpdate
-    ? formatKg(status.latestUpdate.biogasQuantity)
-    : formatKg(0);
+  updateBiogasPreview();
 }
 
-async function loadWetProcessingStatus() {
-  try {
-    const status = await request("/api/wet-processing-status", { method: "GET" });
-    renderWetProcessingStatus(status);
-  } catch (error) {
-    setMessage(elements.entryMessage, error.message, "error");
-  }
+function updateBiogasPreview() {
+  const totalWet = state.wetStatus ? Number(state.wetStatus.totalWetProcessed) : 0;
+  const compost = Number(elements.compostQuantity.value || 0);
+  const biogas = Math.max(totalWet - compost, 0);
+  elements.wetBiogasValue.textContent = formatKg(biogas);
 }
 
-function resetEntryForm() {
-  elements.entryForm.reset();
-  elements.wetAction.value = "normal";
-  clearCollectionInputs();
-  elements.compostQuantity.value = "";
-  elements.biogasQuantity.value = "";
-  state.wetProcessingStatus = null;
-  elements.wetTotalValue.textContent = formatKg(0);
-  elements.wetCompostValue.textContent = formatKg(0);
-  elements.wetBiogasValue.textContent = formatKg(0);
-  updateFormForCategory();
+function updateOperatorMode() {
+  const isCompost = elements.operatorMode.value === "compost";
+  elements.segregationFields.classList.toggle("hidden", isCompost);
+  elements.compostFields.classList.toggle("hidden", !isCompost);
+  elements.collectionSelect.required = !isCompost;
+  elements.processingCategory.required = !isCompost;
+  elements.processingSubtype.required = !isCompost;
+  elements.processingQuantity.required = !isCompost;
+  elements.compostQuantity.required = isCompost;
+  elements.operatorSubmitButton.textContent = isCompost ? "Save Compost Update" : "Save Segregation Entry";
 }
 
 async function bootstrap() {
@@ -254,7 +204,13 @@ async function bootstrap() {
   state.user = session.authenticated ? session.user : null;
   renderAppView();
 
-  if (state.user && state.user.role === "admin") {
+  if (state.user?.role === "staff") {
+    elements.staffCollectionDate.value = todayIsoDate();
+  }
+  if (state.user?.role === "operator") {
+    await Promise.all([loadOperatorCollections(), loadWetProcessingStatus()]);
+  }
+  if (state.user?.role === "admin") {
     await loadDashboard();
   }
 }
@@ -272,8 +228,19 @@ async function handleLogin(event) {
     });
     state.user = payload.user;
     renderAppView();
-    resetEntryForm();
     setMessage(elements.loginMessage, "Login successful.", "success");
+
+    if (state.user.role === "staff") {
+      elements.staffForm.reset();
+      elements.staffCollectionDate.value = todayIsoDate();
+      updateStaffRooms();
+    }
+    if (state.user.role === "operator") {
+      elements.operatorForm.reset();
+      updateProcessingSubtype();
+      updateOperatorMode();
+      await Promise.all([loadOperatorCollections(), loadWetProcessingStatus()]);
+    }
     if (state.user.role === "admin") {
       await loadDashboard();
     }
@@ -287,91 +254,86 @@ async function handleLogout() {
   state.user = null;
   renderAppView();
   setMessage(elements.loginMessage, "You have been logged out.", "success");
-  setMessage(elements.entryMessage, "");
+  setMessage(elements.staffMessage, "");
+  setMessage(elements.operatorMessage, "");
   setMessage(elements.dashboardMessage, "");
 }
 
-function buildCollectionPayload() {
-  const category = elements.wasteCategory.value;
-  if (category === "Dry Waste") {
-    return {
-      wasteCategory: category,
-      housingBlock: elements.housingBlock.value,
-      roomNumber: elements.roomNumber.value,
-      wasteSubtype: elements.wasteSubtype.value,
-      sourceLocation: elements.sourceLocation.value,
-      quantity: elements.quantity.value,
-    };
+async function handleStaffSubmit(event) {
+  event.preventDefault();
+  setMessage(elements.staffMessage, "Saving collection entry...");
+  try {
+    await request("/api/staff-collections", {
+      method: "POST",
+      body: JSON.stringify({
+        housingBlock: elements.staffHousingBlock.value,
+        roomNumber: elements.staffRoomNumber.value,
+        collectionDate: elements.staffCollectionDate.value,
+      }),
+    });
+    elements.staffForm.reset();
+    elements.staffCollectionDate.value = todayIsoDate();
+    updateStaffRooms();
+    setMessage(elements.staffMessage, "Housing collection marked successfully.", "success");
+  } catch (error) {
+    setMessage(elements.staffMessage, error.message, "error");
   }
-
-  if (category === "Wet Waste") {
-    return {
-      wasteCategory: category,
-      housingBlock: elements.housingBlock.value,
-      roomNumber: elements.roomNumber.value,
-      sourceLocation: elements.sourceLocation.value,
-      quantity: elements.quantity.value,
-    };
-  }
-
-  return {
-    wasteCategory: category,
-    wasteSubtype: elements.hazardousSubtype.value,
-    housingBlock: elements.housingBlock.value,
-    roomNumber: elements.roomNumber.value,
-    quantity: elements.quantity.value,
-    startDate: elements.startDate.value,
-    endDate: elements.endDate.value,
-  };
 }
 
-async function handleEntrySubmit(event) {
+async function loadOperatorCollections() {
+  const payload = await request("/api/operator/collections", { method: "GET" });
+  renderOperatorCollections(payload.collections);
+}
+
+async function loadWetProcessingStatus() {
+  const payload = await request("/api/wet-processing-status", { method: "GET" });
+  renderWetStatus(payload);
+}
+
+async function handleOperatorSubmit(event) {
   event.preventDefault();
-  setMessage(elements.entryMessage, "Saving...");
-
-  const isWetWeekly = elements.wasteCategory.value === "Wet Waste" && elements.wetAction.value === "weekly_update";
-
+  setMessage(elements.operatorMessage, "Saving operator entry...");
+  const isCompost = elements.operatorMode.value === "compost";
   try {
-    if (isWetWeekly) {
+    if (isCompost) {
       await request("/api/wet-processing-updates", {
         method: "POST",
         body: JSON.stringify({
           compostQuantity: elements.compostQuantity.value,
-          biogasQuantity: elements.biogasQuantity.value,
         }),
       });
       await loadWetProcessingStatus();
-      setMessage(elements.entryMessage, "Wet waste processing update saved successfully.", "success");
-    } else {
-      await request("/api/entries", {
-        method: "POST",
-        body: JSON.stringify(buildCollectionPayload()),
-      });
-      setMessage(elements.entryMessage, "Waste entry saved successfully.", "success");
-    }
-
-    if (state.user.role === "admin") {
-      await loadDashboard();
-    }
-
-    if (!isWetWeekly) {
-      resetEntryForm();
-    } else {
       elements.compostQuantity.value = "";
-      elements.biogasQuantity.value = "";
+      updateBiogasPreview();
+      setMessage(elements.operatorMessage, "Compost update saved successfully.", "success");
+    } else {
+      await request("/api/processing-entries", {
+        method: "POST",
+        body: JSON.stringify({
+          collectionId: elements.collectionSelect.value,
+          wasteCategory: elements.processingCategory.value,
+          wasteSubtype: elements.processingSubtype.value,
+          quantity: elements.processingQuantity.value,
+        }),
+      });
+      elements.operatorForm.reset();
+      updateOperatorMode();
+      updateProcessingSubtype();
+      await Promise.all([loadOperatorCollections(), loadWetProcessingStatus()]);
+      setMessage(elements.operatorMessage, "Segregation entry saved successfully.", "success");
     }
   } catch (error) {
-    setMessage(elements.entryMessage, error.message, "error");
+    setMessage(elements.operatorMessage, error.message, "error");
   }
 }
 
 function renderDashboard(data) {
   const metrics = [
-    ["Total Waste Today", formatKg(data.metrics.totalWasteToday)],
-    ["Wet Waste Today", formatKg(data.metrics.wetWasteToday)],
+    ["Collections Today", `${data.metrics.collectionsToday}`],
+    ["Processed Entries Today", `${data.metrics.processedEntriesToday}`],
+    ["Total Processed Today", formatKg(data.metrics.totalProcessedToday)],
     ["Dry Waste Today", formatKg(data.metrics.dryWasteToday)],
-    ["Hazardous Waste Today", formatKg(data.metrics.hazardousWasteToday)],
-    ["Entries Today", `${data.metrics.entriesToday}`],
+    ["Wet Waste Today", formatKg(data.metrics.wetWasteToday)],
   ];
 
   elements.metricsGrid.innerHTML = "";
@@ -384,14 +346,14 @@ function renderDashboard(data) {
 
   elements.breakdownList.innerHTML = "";
   if (data.breakdown.length === 0) {
-    elements.breakdownList.innerHTML = '<p class="muted-text">No waste entries saved yet.</p>';
+    elements.breakdownList.innerHTML = '<p class="muted-text">No operator segregation entries saved yet.</p>';
   } else {
     data.breakdown.forEach((item) => {
       const block = document.createElement("article");
       block.className = "breakdown-item";
       block.innerHTML = `
         <strong>${item.wasteCategory}</strong>
-        <p>${formatKg(item.totalWeight)} collected</p>
+        <p>${formatKg(item.totalWeight)} recorded</p>
         <p class="muted-text">${item.entriesCount} entries</p>
       `;
       elements.breakdownList.appendChild(block);
@@ -399,67 +361,70 @@ function renderDashboard(data) {
   }
 
   elements.wetProcessingPanel.innerHTML = "";
-  const wetStatus = data.wetProcessing;
-  const cards = [
-    ["Total Wet Waste Logged", formatKg(wetStatus.totalWetCollected)],
+  const wetCards = [
+    ["Total Wet Processed", formatKg(data.wetProcessing.totalWetProcessed)],
     [
-      "Latest Compost Allocation",
-      wetStatus.latestUpdate ? formatKg(wetStatus.latestUpdate.compostQuantity) : "No update",
+      "Latest Compost",
+      data.wetProcessing.latestUpdate ? formatKg(data.wetProcessing.latestUpdate.compostQuantity) : "No update",
     ],
     [
-      "Latest Biogas Allocation",
-      wetStatus.latestUpdate ? formatKg(wetStatus.latestUpdate.biogasQuantity) : "No update",
+      "Latest Biogas",
+      data.wetProcessing.latestUpdate ? formatKg(data.wetProcessing.latestUpdate.biogasQuantity) : "No update",
     ],
-    ["Pending Allocation", formatKg(wetStatus.pendingAllocation)],
   ];
-  cards.forEach(([label, value]) => {
+  wetCards.forEach(([label, value]) => {
     const card = document.createElement("article");
     card.className = "processing-card";
     card.innerHTML = `<p class="metric-label">${label}</p><p class="metric-value">${value}</p>`;
     elements.wetProcessingPanel.appendChild(card);
   });
 
-  if (wetStatus.latestUpdate) {
-    const note = document.createElement("article");
-    note.className = "processing-card";
-    note.innerHTML = `
-      <p class="metric-label">Latest update record</p>
-      <p>${wetStatus.latestUpdate.employeeId}</p>
-      <p class="muted-text">${wetStatus.latestUpdate.timestamp.replace("T", " ")}</p>
-    `;
-    elements.wetProcessingPanel.appendChild(note);
+  elements.recentCollectionsBody.innerHTML = "";
+  if (data.recentCollections.length === 0) {
+    const row = document.createElement("tr");
+    row.innerHTML = '<td colspan="5" class="muted-text">No staff collections recorded yet.</td>';
+    elements.recentCollectionsBody.appendChild(row);
+  } else {
+    data.recentCollections.forEach((entry) => {
+      const row = document.createElement("tr");
+      row.innerHTML = `
+        <td>${entry.timestamp.replace("T", " ")}</td>
+        <td>${entry.employeeId}</td>
+        <td>${entry.housingBlock}</td>
+        <td>${entry.roomNumber}</td>
+        <td>${entry.collectionDate}</td>
+      `;
+      elements.recentCollectionsBody.appendChild(row);
+    });
   }
 
-  elements.recentEntriesBody.innerHTML = "";
-  if (data.recentEntries.length === 0) {
+  elements.recentProcessingBody.innerHTML = "";
+  if (data.recentProcessingEntries.length === 0) {
     const row = document.createElement("tr");
-    row.innerHTML = '<td colspan="6" class="muted-text">No recent entries available.</td>';
-    elements.recentEntriesBody.appendChild(row);
-    return;
+    row.innerHTML = '<td colspan="7" class="muted-text">No operator entries recorded yet.</td>';
+    elements.recentProcessingBody.appendChild(row);
+  } else {
+    data.recentProcessingEntries.forEach((entry) => {
+      const row = document.createElement("tr");
+      row.innerHTML = `
+        <td>${entry.timestamp.replace("T", " ")}</td>
+        <td>${entry.employeeId}</td>
+        <td>${entry.wasteCategory}</td>
+        <td>${entry.wasteSubtype}</td>
+        <td>${entry.housingBlock}</td>
+        <td>${entry.roomNumber}</td>
+        <td>${formatKg(entry.quantity)}</td>
+      `;
+      elements.recentProcessingBody.appendChild(row);
+    });
   }
-
-  data.recentEntries.forEach((entry) => {
-    const row = document.createElement("tr");
-    row.innerHTML = `
-      <td>${entry.timestamp.replace("T", " ")}</td>
-      <td>${entry.employeeId}</td>
-      <td>${entry.wasteCategory}</td>
-      <td>${entry.wasteSubtype || "Normal Entry"}</td>
-      <td>${entry.location}</td>
-      <td>${formatKg(entry.quantity)}</td>
-    `;
-    elements.recentEntriesBody.appendChild(row);
-  });
 }
 
 async function loadDashboard() {
-  if (!state.user || state.user.role !== "admin") {
-    return;
-  }
   setMessage(elements.dashboardMessage, "Loading dashboard...");
   try {
-    const data = await request("/api/dashboard", { method: "GET" });
-    renderDashboard(data);
+    const payload = await request("/api/dashboard", { method: "GET" });
+    renderDashboard(payload);
     setMessage(elements.dashboardMessage, "Dashboard updated.", "success");
   } catch (error) {
     setMessage(elements.dashboardMessage, error.message, "error");
@@ -468,20 +433,12 @@ async function loadDashboard() {
 
 elements.loginForm.addEventListener("submit", handleLogin);
 elements.logoutButton.addEventListener("click", handleLogout);
-elements.entryForm.addEventListener("submit", handleEntrySubmit);
-elements.housingBlock.addEventListener("change", updateRooms);
-elements.wasteCategory.addEventListener("change", () => {
-  clearCollectionInputs();
-  elements.compostQuantity.value = "";
-  elements.biogasQuantity.value = "";
-  updateFormForCategory();
-});
-elements.wetAction.addEventListener("change", updateFormForCategory);
-elements.entryTabButton.addEventListener("click", () => showTab("entry"));
-elements.dashboardTabButton.addEventListener("click", async () => {
-  showTab("dashboard");
-  await loadDashboard();
-});
+elements.staffForm.addEventListener("submit", handleStaffSubmit);
+elements.staffHousingBlock.addEventListener("change", updateStaffRooms);
+elements.operatorForm.addEventListener("submit", handleOperatorSubmit);
+elements.operatorMode.addEventListener("change", updateOperatorMode);
+elements.processingCategory.addEventListener("change", updateProcessingSubtype);
+elements.compostQuantity.addEventListener("input", updateBiogasPreview);
 elements.refreshDashboardButton.addEventListener("click", loadDashboard);
 
 elements.credentialChips.forEach((chip) => {

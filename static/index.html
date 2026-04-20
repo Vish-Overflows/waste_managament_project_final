@@ -12,7 +12,7 @@
         <div>
           <p class="section-kicker">Campus Sanitation Records</p>
           <h1>Campus Waste Management Portal</h1>
-          <p class="subtitle">Waste collection entry and weekly wet-waste processing records.</p>
+          <p class="subtitle">Staff collection logging, operator segregation, and administrative reporting.</p>
         </div>
       </header>
 
@@ -21,18 +21,21 @@
           <div class="panel-heading">
             <div>
               <p class="section-kicker">Sign In</p>
-              <h2>Authorized Staff Login</h2>
+              <h2>Authorized Access</h2>
             </div>
           </div>
 
           <div class="notice-card">
             <p class="notice-title">Demo credentials</p>
             <div class="credential-grid">
-              <button class="credential-chip" data-username="worker1" data-password="password" type="button">
-                worker1 / password
+              <button class="credential-chip" data-username="staff1" data-password="password" type="button">
+                staff1 / password
               </button>
-              <button class="credential-chip" data-username="worker2" data-password="password" type="button">
-                worker2 / password
+              <button class="credential-chip" data-username="staff2" data-password="password" type="button">
+                staff2 / password
+              </button>
+              <button class="credential-chip" data-username="operator1" data-password="password" type="button">
+                operator1 / password
               </button>
               <button class="credential-chip" data-username="admin" data-password="password" type="button">
                 admin / password
@@ -62,131 +65,142 @@
               <p id="roleLine" class="muted-text"></p>
             </div>
             <div class="toolbar-actions">
-              <button id="entryTabButton" class="secondary-btn tab-button active" type="button">Waste Entry</button>
-              <button id="dashboardTabButton" class="secondary-btn tab-button hidden" type="button">Dashboard</button>
               <button id="logoutButton" class="ghost-btn" type="button">Log Out</button>
             </div>
           </div>
 
-          <div id="entrySection" class="panel">
+          <section id="staffSection" class="panel hidden">
             <div class="panel-heading">
               <div>
-                <p class="section-kicker">Operations Entry</p>
-                <h2>Waste Record Form</h2>
+                <p class="section-kicker">Staff Workflow</p>
+                <h2>Housing Collection Marking</h2>
               </div>
-              <p class="muted-text">Select a waste category to load the appropriate workflow.</p>
+              <p class="muted-text">Staff only records that waste was collected from a housing location.</p>
             </div>
 
-            <form id="entryForm" class="form-grid">
+            <form id="staffForm" class="form-grid">
               <label>
-                <span>Waste Category</span>
-                <select id="wasteCategory" name="wasteCategory" required>
-                  <option value="">Select waste category</option>
+                <span>Housing Block</span>
+                <select id="staffHousingBlock" required>
+                  <option value="">Select housing block</option>
                 </select>
               </label>
 
-              <div id="wetActionContainer" class="inline-choice hidden">
+              <label>
+                <span>Room Number</span>
+                <select id="staffRoomNumber" required disabled>
+                  <option value="">Select room number</option>
+                </select>
+              </label>
+
+              <label>
+                <span>Collection Date</span>
+                <input id="staffCollectionDate" type="date" required />
+              </label>
+
+              <button class="primary-btn" type="submit">Mark Collected</button>
+            </form>
+            <p id="staffMessage" class="status-message" aria-live="polite"></p>
+          </section>
+
+          <section id="operatorSection" class="panel hidden">
+            <div class="panel-heading">
+              <div>
+                <p class="section-kicker">Operator Workflow</p>
+                <h2>Segregation and Compost Entry</h2>
+              </div>
+              <p class="muted-text">Operators convert collected housing waste into measured dry and wet records.</p>
+            </div>
+
+            <section class="sub-panel table-panel">
+              <h3>Collected Housing Entries</h3>
+              <div class="table-wrap">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Date</th>
+                      <th>Staff</th>
+                      <th>Block</th>
+                      <th>Room</th>
+                      <th>Processed Entries</th>
+                      <th>Processed Weight</th>
+                    </tr>
+                  </thead>
+                  <tbody id="operatorCollectionsBody"></tbody>
+                </table>
+              </div>
+            </section>
+
+            <form id="operatorForm" class="form-grid">
+              <label>
+                <span>Operator Action</span>
+                <select id="operatorMode" required>
+                  <option value="segregation">Normal Segregation Entry</option>
+                  <option value="compost">Compost Update</option>
+                </select>
+              </label>
+
+              <div id="segregationFields" class="workflow-grid">
                 <label>
-                  <span>Wet Waste Action</span>
-                  <select id="wetAction" name="wetAction">
-                    <option value="normal">Normal Entry</option>
-                    <option value="weekly_update">Weekly Compost / Biogas Update</option>
-                  </select>
-                </label>
-              </div>
-
-              <div id="collectionFields" class="workflow-grid hidden">
-                <label id="housingBlockField">
-                  <span>Academic Block</span>
-                  <select id="housingBlock" name="housingBlock">
-                    <option value="">Select academic block</option>
+                  <span>Collected Housing Entry</span>
+                  <select id="collectionSelect" required>
+                    <option value="">Select collected entry</option>
                   </select>
                 </label>
 
-                <label id="roomNumberField">
-                  <span>Room Number</span>
-                  <select id="roomNumber" name="roomNumber" disabled>
-                    <option value="">Select room number</option>
+                <label>
+                  <span>Waste Category</span>
+                  <select id="processingCategory" required>
+                    <option value="">Select waste category</option>
                   </select>
                 </label>
 
-                <label id="dryTypeField" class="hidden">
-                  <span>Dry Waste Type</span>
-                  <select id="wasteSubtype" name="wasteSubtype">
-                    <option value="">Select dry waste type</option>
+                <label>
+                  <span>Waste Sub Type</span>
+                  <select id="processingSubtype" required>
+                    <option value="">Select waste sub type</option>
                   </select>
                 </label>
 
-                <label id="sourceLocationField" class="hidden">
-                  <span id="sourceLocationLabel">Collection Location</span>
-                  <select id="sourceLocation" name="sourceLocation">
-                    <option value="">Select location</option>
-                  </select>
-                </label>
-
-                <label id="hazardousTypeField" class="hidden">
-                  <span>Hazardous Waste Type</span>
-                  <select id="hazardousSubtype" name="hazardousSubtype">
-                    <option value="">Select hazardous waste type</option>
-                  </select>
-                </label>
-
-                <div id="hazardousDates" class="date-grid hidden">
-                  <label>
-                    <span>Collection Start Date</span>
-                    <input id="startDate" name="startDate" type="date" />
-                  </label>
-                  <label>
-                    <span>Collection End Date</span>
-                    <input id="endDate" name="endDate" type="date" />
-                  </label>
-                </div>
-
-                <label id="quantityField" class="hidden">
+                <label>
                   <span>Waste Quantity (kg)</span>
-                  <input id="quantity" name="quantity" type="number" min="0.1" step="0.01" placeholder="e.g. 2.50" />
+                  <input id="processingQuantity" type="number" min="0.1" step="0.01" placeholder="e.g. 2.50" required />
                 </label>
               </div>
 
-              <div id="wetUpdateSection" class="workflow-panel hidden">
+              <div id="compostFields" class="workflow-panel hidden">
                 <div class="summary-grid">
                   <article class="summary-card">
-                    <p class="summary-label">Total Wet Waste Logged</p>
+                    <p class="summary-label">Total Wet Waste Segregated</p>
                     <p id="wetTotalValue" class="summary-value">0.00 kg</p>
                   </article>
                   <article class="summary-card">
-                    <p class="summary-label">Latest Compost Allocation</p>
+                    <p class="summary-label">Latest Compost Entry</p>
                     <p id="wetCompostValue" class="summary-value">0.00 kg</p>
                   </article>
                   <article class="summary-card">
-                    <p class="summary-label">Latest Biogas Allocation</p>
+                    <p class="summary-label">Auto-calculated Biogas</p>
                     <p id="wetBiogasValue" class="summary-value">0.00 kg</p>
                   </article>
                 </div>
 
-                <p class="muted-text helper-text">
-                  Enter compost, biogas, or both. If only one field is filled, the system will calculate the other
-                  amount from total wet waste logged so far across all workers.
-                </p>
-
                 <div class="workflow-grid">
                   <label>
                     <span>Compost Quantity (kg)</span>
-                    <input id="compostQuantity" name="compostQuantity" type="number" min="0" step="0.01" placeholder="Optional" />
-                  </label>
-                  <label>
-                    <span>Biogas Quantity (kg)</span>
-                    <input id="biogasQuantity" name="biogasQuantity" type="number" min="0" step="0.01" placeholder="Optional" />
+                    <input id="compostQuantity" type="number" min="0.1" step="0.01" placeholder="Enter compost quantity" />
                   </label>
                 </div>
+                <p class="muted-text helper-text">
+                  Biogas is automatically calculated as total wet waste processed so far minus compost quantity.
+                </p>
               </div>
 
-              <button id="submitButton" class="primary-btn hidden" type="submit">Save Entry</button>
+              <button id="operatorSubmitButton" class="primary-btn" type="submit">Save Operator Entry</button>
             </form>
-            <p id="entryMessage" class="status-message" aria-live="polite"></p>
-          </div>
+            <p id="operatorMessage" class="status-message" aria-live="polite"></p>
+          </section>
 
-          <div id="dashboardSection" class="panel hidden">
+          <section id="adminSection" class="panel hidden">
             <div class="panel-heading">
               <div>
                 <p class="section-kicker">Admin View</p>
@@ -203,31 +217,50 @@
                 <div id="breakdownList" class="breakdown-list"></div>
               </section>
               <section class="sub-panel">
-                <h3>Wet Waste Processing Status</h3>
+                <h3>Wet Processing</h3>
                 <div id="wetProcessingPanel" class="processing-panel"></div>
               </section>
             </div>
 
             <section class="sub-panel table-panel">
-              <h3>Recent Entries</h3>
+              <h3>Recent Housing Collections</h3>
               <div class="table-wrap">
                 <table>
                   <thead>
                     <tr>
                       <th>Time</th>
-                      <th>Employee</th>
+                      <th>Staff</th>
+                      <th>Block</th>
+                      <th>Room</th>
+                      <th>Collection Date</th>
+                    </tr>
+                  </thead>
+                  <tbody id="recentCollectionsBody"></tbody>
+                </table>
+              </div>
+            </section>
+
+            <section class="sub-panel table-panel">
+              <h3>Recent Operator Entries</h3>
+              <div class="table-wrap">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Time</th>
+                      <th>Operator</th>
                       <th>Category</th>
-                      <th>Detail</th>
-                      <th>Location</th>
+                      <th>Sub Type</th>
+                      <th>Block</th>
+                      <th>Room</th>
                       <th>Qty</th>
                     </tr>
                   </thead>
-                  <tbody id="recentEntriesBody"></tbody>
+                  <tbody id="recentProcessingBody"></tbody>
                 </table>
               </div>
             </section>
             <p id="dashboardMessage" class="status-message" aria-live="polite"></p>
-          </div>
+          </section>
         </section>
       </main>
     </div>
