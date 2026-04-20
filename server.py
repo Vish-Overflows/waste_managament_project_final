@@ -1,7 +1,10 @@
 from __future__ import annotations
 
 import argparse
+import base64
 import json
+import hashlib
+import hmac
 import mimetypes
 import os
 import secrets
@@ -86,6 +89,18 @@ def init_db(db_path: Path) -> None:
     with sqlite3.connect(db_path) as connection:
         connection.execute(
             """
+            CREATE TABLE IF NOT EXISTS users (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                username TEXT NOT NULL UNIQUE,
+                password_hash TEXT NOT NULL,
+                role TEXT NOT NULL,
+                active INTEGER NOT NULL DEFAULT 1,
+                created_at TEXT NOT NULL
+            )
+            """
+        )
+        connection.execute(
+            """
             CREATE TABLE IF NOT EXISTS housing_collections (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 employee_id TEXT NOT NULL,
@@ -129,7 +144,53 @@ def init_db(db_path: Path) -> None:
             """
         )
         migrate_waste_entries_schema(connection)
+        seed_demo_users(connection)
         connection.commit()
+
+
+def hash_password(password: str, salt: str | None = None) -> str:
+    password_salt = salt or secrets.token_hex(16)
+    derived = hashlib.pbkdf2_hmac(
+        "sha256",
+        password.encode("utf-8"),
+        password_salt.encode("utf-8"),
+        200000,
+    )
+    encoded = base64.b64encode(derived).decode("ascii")
+    return f"pbkdf2_sha256${password_salt}${encoded}"
+
+
+def verify_password(password: str, stored_hash: str) -> bool:
+    try:
+        algorithm, salt, digest = stored_hash.split("$", 2)
+    except ValueError:
+        return False
+    if algorithm != "pbkdf2_sha256":
+        return False
+    comparison = hash_password(password, salt)
+    return hmac.compare_digest(comparison, stored_hash)
+
+
+def seed_demo_users(connection: sqlite3.Connection) -> None:
+    for username, data in USERS.items():
+        existing = connection.execute(
+            "SELECT username FROM users WHERE username = ?",
+            (username,),
+        ).fetchone()
+        if existing:
+            continue
+        connection.execute(
+            """
+            INSERT INTO users (username, password_hash, role, active, created_at)
+            VALUES (?, ?, ?, 1, ?)
+            """,
+            (
+                username,
+                hash_password(data["password"]),
+                data["role"],
+                datetime.now().isoformat(timespec="seconds"),
+            ),
+        )
 
 
 def ensure_column(connection: sqlite3.Connection, table_name: str, column_name: str, definition: str) -> None:
@@ -235,6 +296,14 @@ def build_handler(config: AppConfig) -> type[BaseHTTPRequestHandler]:
     class WasteAppHandler(BaseHTTPRequestHandler):
         server_version = "WasteApp/3.0"
 
+        def do_HEAD(self) -> None:
+            parsed = urlparse(self.path)
+            if parsed.path in {"/", "/styles.css", "/app.js", "/api/config", "/api/session", "/api/operator/collections", "/api/wet-processing-status", "/api/dashboard", "/healthz"}:
+                self.send_response(HTTPStatus.OK)
+                self.end_headers()
+                return
+            self.send_error(HTTPStatus.NOT_FOUND)
+
         def do_GET(self) -> None:
             parsed = urlparse(self.path)
             path = parsed.path
@@ -261,6 +330,9 @@ def build_handler(config: AppConfig) -> type[BaseHTTPRequestHandler]:
                         ],
                     }
                 )
+                return
+            if path == "/healthz":
+                self.send_json({"status": "ok"})
                 return
             if path == "/api/session":
                 session = self.require_session(optional=True)
@@ -316,8 +388,17 @@ def build_handler(config: AppConfig) -> type[BaseHTTPRequestHandler]:
                     return
                 username = str(payload.get("username", "")).strip()
                 password = str(payload.get("password", "")).strip()
-                user = USERS.get(username)
-                if not user or user["password"] != password:
+                with sqlite3.connect(config.db_path) as connection:
+                    connection.row_factory = sqlite3.Row
+                    user = connection.execute(
+                        """
+                        SELECT username, password_hash, role, active
+                        FROM users
+                        WHERE username = ?
+                        """,
+                        (username,),
+                    ).fetchone()
+                if not user or not bool(user["active"]) or not verify_password(password, user["password_hash"]):
                     self.send_error_json(HTTPStatus.UNAUTHORIZED, "Invalid username or password.")
                     return
                 token = config.session_store.create(username, user["role"])
@@ -713,6 +794,7 @@ def build_handler(config: AppConfig) -> type[BaseHTTPRequestHandler]:
 
         def load_dashboard(self) -> dict[str, Any]:
             today = datetime.now().date().isoformat()
+            last_7_days = connection_rows = None
             with sqlite3.connect(config.db_path) as connection:
                 connection.row_factory = sqlite3.Row
                 metrics = connection.execute(
@@ -754,7 +836,51 @@ def build_handler(config: AppConfig) -> type[BaseHTTPRequestHandler]:
                     """
                 ).fetchall()
 
+                block_rows = connection.execute(
+                    """
+                    SELECT
+                        hc.housing_block,
+                        COUNT(hc.id) AS collections_count,
+                        ROUND(COALESCE(SUM(we.quantity), 0), 2) AS processed_weight
+                    FROM housing_collections hc
+                    LEFT JOIN waste_entries we ON we.collection_id = hc.id
+                    GROUP BY hc.housing_block
+                    ORDER BY hc.housing_block
+                    """
+                ).fetchall()
+
+                operator_rows = connection.execute(
+                    """
+                    SELECT employee_id, COUNT(*) AS entries_count, ROUND(COALESCE(SUM(quantity), 0), 2) AS total_weight
+                    FROM waste_entries
+                    GROUP BY employee_id
+                    ORDER BY total_weight DESC, entries_count DESC
+                    LIMIT 5
+                    """
+                ).fetchall()
+
+                last_7_days = connection.execute(
+                    """
+                    SELECT
+                        substr(created_at, 1, 10) AS entry_date,
+                        ROUND(COALESCE(SUM(quantity), 0), 2) AS total_weight
+                    FROM waste_entries
+                    WHERE date(substr(created_at, 1, 10)) >= date('now', '-6 days')
+                    GROUP BY substr(created_at, 1, 10)
+                    ORDER BY entry_date
+                    """
+                ).fetchall()
+
                 wet_status = self.load_wet_processing_status()
+
+            total_processed_all_time = sum(item["totalWeight"] for item in [
+                {
+                    "wasteCategory": row["waste_category"],
+                    "entriesCount": int(row["entries_count"]),
+                    "totalWeight": float(row["total_weight"]),
+                }
+                for row in breakdown_rows
+            ])
 
             return {
                 "metrics": {
@@ -769,8 +895,35 @@ def build_handler(config: AppConfig) -> type[BaseHTTPRequestHandler]:
                         "wasteCategory": row["waste_category"],
                         "entriesCount": int(row["entries_count"]),
                         "totalWeight": float(row["total_weight"]),
+                        "sharePercent": round(
+                            (float(row["total_weight"]) / total_processed_all_time * 100) if total_processed_all_time else 0,
+                            1,
+                        ),
                     }
                     for row in breakdown_rows
+                ],
+                "blockAnalytics": [
+                    {
+                        "housingBlock": row["housing_block"],
+                        "collectionsCount": int(row["collections_count"]),
+                        "processedWeight": float(row["processed_weight"]),
+                    }
+                    for row in block_rows
+                ],
+                "operatorAnalytics": [
+                    {
+                        "employeeId": row["employee_id"],
+                        "entriesCount": int(row["entries_count"]),
+                        "totalWeight": float(row["total_weight"]),
+                    }
+                    for row in operator_rows
+                ],
+                "trendAnalytics": [
+                    {
+                        "date": row["entry_date"],
+                        "totalWeight": float(row["total_weight"]),
+                    }
+                    for row in last_7_days
                 ],
                 "recentCollections": [
                     {

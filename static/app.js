@@ -42,6 +42,9 @@ const elements = {
   metricsGrid: document.getElementById("metricsGrid"),
   breakdownList: document.getElementById("breakdownList"),
   wetProcessingPanel: document.getElementById("wetProcessingPanel"),
+  blockAnalyticsPanel: document.getElementById("blockAnalyticsPanel"),
+  operatorAnalyticsPanel: document.getElementById("operatorAnalyticsPanel"),
+  trendAnalyticsPanel: document.getElementById("trendAnalyticsPanel"),
   recentCollectionsBody: document.getElementById("recentCollectionsBody"),
   recentProcessingBody: document.getElementById("recentProcessingBody"),
   dashboardMessage: document.getElementById("dashboardMessage"),
@@ -354,7 +357,7 @@ function renderDashboard(data) {
       block.innerHTML = `
         <strong>${item.wasteCategory}</strong>
         <p>${formatKg(item.totalWeight)} recorded</p>
-        <p class="muted-text">${item.entriesCount} entries</p>
+        <p class="muted-text">${item.entriesCount} entries • ${item.sharePercent}% share</p>
       `;
       elements.breakdownList.appendChild(block);
     });
@@ -378,6 +381,65 @@ function renderDashboard(data) {
     card.innerHTML = `<p class="metric-label">${label}</p><p class="metric-value">${value}</p>`;
     elements.wetProcessingPanel.appendChild(card);
   });
+
+  elements.blockAnalyticsPanel.innerHTML = "";
+  if (data.blockAnalytics.length === 0) {
+    elements.blockAnalyticsPanel.innerHTML = '<p class="muted-text">No block analytics available yet.</p>';
+  } else {
+    const maxWeight = Math.max(...data.blockAnalytics.map((item) => item.processedWeight), 1);
+    data.blockAnalytics.forEach((item) => {
+      const card = document.createElement("article");
+      card.className = "analytics-item";
+      const width = Math.max((item.processedWeight / maxWeight) * 100, 4);
+      card.innerHTML = `
+        <div class="analytics-head">
+          <strong>${item.housingBlock}</strong>
+          <span>${formatKg(item.processedWeight)}</span>
+        </div>
+        <div class="analytics-bar"><span style="width:${width}%"></span></div>
+        <p class="muted-text">${item.collectionsCount} collections marked</p>
+      `;
+      elements.blockAnalyticsPanel.appendChild(card);
+    });
+  }
+
+  elements.operatorAnalyticsPanel.innerHTML = "";
+  if (data.operatorAnalytics.length === 0) {
+    elements.operatorAnalyticsPanel.innerHTML = '<p class="muted-text">No operator analytics available yet.</p>';
+  } else {
+    const maxWeight = Math.max(...data.operatorAnalytics.map((item) => item.totalWeight), 1);
+    data.operatorAnalytics.forEach((item) => {
+      const card = document.createElement("article");
+      card.className = "analytics-item";
+      const width = Math.max((item.totalWeight / maxWeight) * 100, 4);
+      card.innerHTML = `
+        <div class="analytics-head">
+          <strong>${item.employeeId}</strong>
+          <span>${formatKg(item.totalWeight)}</span>
+        </div>
+        <div class="analytics-bar"><span style="width:${width}%"></span></div>
+        <p class="muted-text">${item.entriesCount} operator entries</p>
+      `;
+      elements.operatorAnalyticsPanel.appendChild(card);
+    });
+  }
+
+  elements.trendAnalyticsPanel.innerHTML = "";
+  if (data.trendAnalytics.length === 0) {
+    elements.trendAnalyticsPanel.innerHTML = '<p class="muted-text">No trend data available yet.</p>';
+  } else {
+    const maxTrend = Math.max(...data.trendAnalytics.map((item) => item.totalWeight), 1);
+    data.trendAnalytics.forEach((item) => {
+      const row = document.createElement("div");
+      row.className = "trend-row";
+      row.innerHTML = `
+        <span class="trend-date">${item.date}</span>
+        <div class="trend-bar"><span style="width:${Math.max((item.totalWeight / maxTrend) * 100, 4)}%"></span></div>
+        <span class="trend-value">${formatKg(item.totalWeight)}</span>
+      `;
+      elements.trendAnalyticsPanel.appendChild(row);
+    });
+  }
 
   elements.recentCollectionsBody.innerHTML = "";
   if (data.recentCollections.length === 0) {

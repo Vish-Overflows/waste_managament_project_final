@@ -9,8 +9,14 @@
   <body>
     <div class="app-shell">
       <header class="topbar">
+        <div class="masthead-row">
+          <div>
+            <p class="system-label">IIT Operations System</p>
+            <p class="section-kicker">Campus Sanitation Records</p>
+          </div>
+          <div class="status-pill">Internal Access</div>
+        </div>
         <div>
-          <p class="section-kicker">Campus Sanitation Records</p>
           <h1>Campus Waste Management Portal</h1>
           <p class="subtitle">Staff collection logging, operator segregation, and administrative reporting.</p>
         </div>
@@ -221,6 +227,22 @@
                 <div id="wetProcessingPanel" class="processing-panel"></div>
               </section>
             </div>
+
+            <div class="dashboard-grid analytics-grid">
+              <section class="sub-panel">
+                <h3>Housing Block Analytics</h3>
+                <div id="blockAnalyticsPanel" class="analytics-list"></div>
+              </section>
+              <section class="sub-panel">
+                <h3>Operator Productivity</h3>
+                <div id="operatorAnalyticsPanel" class="analytics-list"></div>
+              </section>
+            </div>
+
+            <section class="sub-panel table-panel">
+              <h3>7 Day Processing Trend</h3>
+              <div id="trendAnalyticsPanel" class="trend-panel"></div>
+            </section>
 
             <section class="sub-panel table-panel">
               <h3>Recent Housing Collections</h3>
