@@ -12,7 +12,7 @@ import {
   Tooltip,
 } from "chart.js";
 
-import { apiFetch } from "./lib/api";
+import { apiFetch, clearAuthToken, setAuthToken } from "./lib/api";
 import type {
   BlockStat,
   CategoryBreakdownPoint,
@@ -301,6 +301,7 @@ export function App() {
         method: "POST",
         body: JSON.stringify(loginForm),
       });
+      setAuthToken(response.access_token);
       setUser(response.user);
       setNotice(`Signed in as ${response.user.username}.`);
     } catch (error) {
@@ -315,6 +316,7 @@ export function App() {
     setScreenError("");
     try {
       await apiFetch<{ message: string }>("/auth/logout", { method: "POST" });
+      clearAuthToken();
       setUser(null);
       setNotice("Session ended.");
     } catch (error) {

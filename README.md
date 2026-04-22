@@ -70,6 +70,53 @@ Expected services:
 - `operator1 / password`
 - `admin / password`
 
+### Railway Deployment For `production-upgrade`
+
+Deploy the upgraded branch as three Railway services in the same project:
+
+1. `PostgreSQL`
+   Add Railway's PostgreSQL template. Railway exposes `DATABASE_URL` and related `PG*` variables to connect services.
+
+2. `backend`
+   Connect the same GitHub repository, but set the branch to `production-upgrade`.
+
+   Required variables:
+
+   - `RAILWAY_DOCKERFILE_PATH=railway/backend.Dockerfile`
+   - `DATABASE_URL=${{Postgres.DATABASE_URL}}`
+   - `SECRET_KEY=<long-random-secret>`
+   - `WEB_CONCURRENCY=2`
+   - `SECURE_COOKIES=false`
+   - `CORS_ORIGINS=https://<your-frontend-service>.up.railway.app`
+
+3. `frontend`
+   Connect the same GitHub repository, again using the `production-upgrade` branch.
+
+   Required variables:
+
+   - `RAILWAY_DOCKERFILE_PATH=railway/frontend.Dockerfile`
+   - `VITE_API_BASE_URL=https://<your-backend-service>.up.railway.app/api`
+
+Why the frontend needs an API variable:
+
+- the production-upgrade frontend is deployed as a separate service from the backend
+- it uses bearer tokens in the browser and must know the backend public URL at build time
+- `frontend/.env.example` shows the same setting for local development
+
+Recommended deployment order:
+
+1. create the PostgreSQL service
+2. deploy the backend and confirm `/healthz` works
+3. deploy the frontend with `VITE_API_BASE_URL` pointing to the backend URL
+4. open the frontend domain and test all 3 roles
+
+Railway docs used for this setup:
+
+- Services: https://docs.railway.com/services
+- Dockerfile paths: https://docs.railway.com/deploy/dockerfiles
+- Variables: https://docs.railway.com/variables
+- PostgreSQL: https://docs.railway.com/guides/postgresql
+
 ## Stable Public Deployment
 
 The exact same app can be deployed as a public website on Render using the included [Dockerfile](/Users/vishnusinha/Documents/project_sushoban/Dockerfile:1).
