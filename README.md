@@ -30,6 +30,46 @@ Open `http://127.0.0.1:8000`
 python3 -m unittest test_app.py
 ```
 
+## Production Upgrade Branch
+
+The `production-upgrade` branch keeps `main` frozen as the working baseline and builds the production system alongside it.
+
+### Upgraded Stack
+
+- `backend/`
+  FastAPI API, SQLAlchemy ORM, JWT authentication, PostgreSQL-ready persistence, role-based access
+- `frontend/`
+  React + TypeScript + Vite + Tailwind interface with separate staff, operator, and admin workflows
+- `docker-compose.yml`
+  local production-style stack for `frontend + backend + postgres + nginx`
+
+### Why This Upgrade Is Safer
+
+- Postgres stores records durably across days and weeks instead of relying on a local SQLite file
+- Gunicorn + Uvicorn workers give the API a more reliable production server path than Python's built-in server
+- The admin dashboard now includes trend, block, and operator analytics
+- Staff, operator, and admin flows are separated cleanly instead of sharing one form
+
+### Local Production-Style Run
+
+```bash
+docker compose up --build
+```
+
+Expected services:
+
+- frontend served behind Nginx
+- backend API on FastAPI
+- PostgreSQL for durable records
+- reverse proxy for a single entry point on `http://127.0.0.1`
+
+### Demo Users On The Upgrade Branch
+
+- `staff1 / password`
+- `staff2 / password`
+- `operator1 / password`
+- `admin / password`
+
 ## Stable Public Deployment
 
 The exact same app can be deployed as a public website on Render using the included [Dockerfile](/Users/vishnusinha/Documents/project_sushoban/Dockerfile:1).
