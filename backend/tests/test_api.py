@@ -65,7 +65,10 @@ class UpgradedApiIntegrationTests(unittest.TestCase):
     def test_healthcheck(self) -> None:
         response = self.client.get("/healthz")
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.json(), {"status": "ok"})
+        payload = response.json()
+        self.assertEqual(payload["status"], "ok")
+        self.assertIn("database", payload)
+        self.assertIn("persistent", payload)
 
     def test_login_rules(self) -> None:
         staff = self.login("staff3", "")

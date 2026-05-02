@@ -1,3 +1,4 @@
+import os
 from functools import lru_cache
 
 from pydantic import Field, field_validator
@@ -39,6 +40,8 @@ class Settings(BaseSettings):
     @classmethod
     def normalize_database_url(cls, value: str | None) -> str:
         if not value:
+            if os.getenv("RAILWAY_ENVIRONMENT") or os.getenv("RAILWAY_PROJECT_ID"):
+                raise ValueError("DATABASE_URL is required on Railway for persistent storage")
             return DEFAULT_DATABASE_URL
         if value.startswith("postgres://"):
             return value.replace("postgres://", "postgresql+psycopg://", 1)

@@ -178,7 +178,11 @@ async def unhandled_exception_handler(_: Request, exc: Exception):
 
 @app.get("/healthz")
 def healthz():
-    return {"status": "ok"}
+    return {
+        "status": "ok",
+        "database": engine.dialect.name,
+        "persistent": engine.dialect.name != "sqlite",
+    }
 
 
 app.include_router(auth.router, prefix=settings.api_prefix)
