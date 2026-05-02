@@ -78,7 +78,8 @@ function formatDate(value: string) {
 }
 
 function formatDateTime(value: string) {
-  const date = new Date(value);
+  const hasTimezone = /(?:Z|[+-]\d{2}:?\d{2})$/.test(value);
+  const date = new Date(hasTimezone ? value : `${value}Z`);
   if (Number.isNaN(date.getTime())) {
     return value;
   }
@@ -893,7 +894,7 @@ export function App() {
                   label="Waste Processed This Week"
                   value={formatWeight(metricValue("Waste Processed This Week"))}
                 />
-                <MetricCard label="Pending Staff Collections" value={metricValue("Pending Staff Collections")} />
+                <MetricCard label="Staff Collection Records" value={metricValue("Staff Collection Records")} />
               </div>
             </section>
 
@@ -992,7 +993,7 @@ export function App() {
                     options={{ plugins: { legend: { display: false } } }}
                   />
                 ) : (
-                  <EmptyState message="Block-wise analytics will populate after recorded processing." />
+                  <EmptyState message="Source analytics will populate after recorded processing." />
                 )}
               </article>
 

@@ -38,12 +38,7 @@ def summary(
         .scalar()
         or 0
     )
-    pending_collections = (
-        db.query(func.count(HousingCollection.id))
-        .filter(HousingCollection.status == "collected")
-        .scalar()
-        or 0
-    )
+    staff_collection_records = total_collections
     processed_collections = (
         db.query(func.count(HousingCollection.id))
         .filter(HousingCollection.status == "processed")
@@ -82,7 +77,7 @@ def summary(
             SummaryMetric(label="Collections Recorded", value=int(total_collections)),
             SummaryMetric(label="Collections Today", value=int(collections_today)),
             SummaryMetric(label="Collections This Week", value=int(collections_this_week)),
-            SummaryMetric(label="Pending Staff Collections", value=int(pending_collections)),
+            SummaryMetric(label="Staff Collection Records", value=int(staff_collection_records)),
             SummaryMetric(label="Collections Processed", value=int(processed_collections)),
             SummaryMetric(label="Waste Processed Today", value=round(processed_today, 2)),
             SummaryMetric(label="Waste Processed This Week", value=round(processed_this_week, 2)),
@@ -167,13 +162,12 @@ def blocks(
 ) -> list[BlockStat]:
     rows = (
         db.query(
-            HousingCollection.housing_block,
-            func.count(HousingCollection.id).label("collections_count"),
+            WasteEntry.housing_block,
+            func.count(WasteEntry.id).label("collections_count"),
             func.coalesce(func.sum(WasteEntry.quantity), 0).label("processed_weight"),
         )
-        .outerjoin(WasteEntry, WasteEntry.collection_id == HousingCollection.id)
-        .group_by(HousingCollection.housing_block)
-        .order_by(HousingCollection.housing_block)
+        .group_by(WasteEntry.housing_block)
+        .order_by(func.coalesce(func.sum(WasteEntry.quantity), 0).desc())
         .all()
     )
     return [

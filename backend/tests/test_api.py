@@ -125,6 +125,7 @@ class UpgradedApiIntegrationTests(unittest.TestCase):
         self.assertEqual(dashboard.status_code, 200, dashboard.text)
         labels = {metric["label"] for metric in dashboard.json()["metrics"]}
         self.assertIn("Collections Recorded", labels)
+        self.assertIn("Staff Collection Records", labels)
         self.assertIn("Wet Waste", labels)
 
     def test_operator_can_quantify_public_bin_waste(self) -> None:
@@ -148,6 +149,14 @@ class UpgradedApiIntegrationTests(unittest.TestCase):
         )
         self.assertEqual(totals.status_code, 200, totals.text)
         self.assertGreaterEqual(totals.json()["total_weight"], 3.75)
+
+        sources = self.client.get(
+            "/api/dashboard/blocks",
+            headers=self.auth_headers("admin"),
+        )
+        self.assertEqual(sources.status_code, 200, sources.text)
+        source_weights = {item["housing_block"]: item["processed_weight"] for item in sources.json()}
+        self.assertGreaterEqual(source_weights["Sports Complex"], 3.75)
 
     def test_dashboard_requires_admin(self) -> None:
         response = self.client.get(
