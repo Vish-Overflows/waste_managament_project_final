@@ -1,4 +1,4 @@
-from datetime import date, timedelta
+from datetime import UTC, date, datetime, time, timedelta
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, Query
@@ -18,6 +18,14 @@ from app.schemas import (
 router = APIRouter(prefix="/dashboard", tags=["dashboard"])
 
 
+def start_of_day(value: date) -> datetime:
+    return datetime.combine(value, time.min, tzinfo=UTC)
+
+
+def next_day(value: date) -> datetime:
+    return start_of_day(value) + timedelta(days=1)
+
+
 @router.get("/summary", response_model=DashboardSummary)
 def summary(
     db: DbSession,
@@ -25,6 +33,9 @@ def summary(
 ) -> DashboardSummary:
     today = date.today()
     week_start = today - timedelta(days=today.weekday())
+    today_start = start_of_day(today)
+    tomorrow_start = next_day(today)
+    week_start_dt = start_of_day(week_start)
     total_collections = db.query(func.count(HousingCollection.id)).scalar() or 0
     collections_today = (
         db.query(func.count(HousingCollection.id))
@@ -47,13 +58,13 @@ def summary(
     )
     processed_today = float(
         db.query(func.coalesce(func.sum(WasteEntry.quantity), 0))
-        .filter(func.date(WasteEntry.created_at) == today.isoformat())
+        .filter(WasteEntry.created_at >= today_start, WasteEntry.created_at < tomorrow_start)
         .scalar()
         or 0
     )
     processed_this_week = float(
         db.query(func.coalesce(func.sum(WasteEntry.quantity), 0))
-        .filter(func.date(WasteEntry.created_at) >= week_start.isoformat())
+        .filter(WasteEntry.created_at >= week_start_dt)
         .scalar()
         or 0
     )
@@ -96,12 +107,13 @@ def trends(
     days: int = Query(default=14, ge=7, le=90),
 ) -> list[TrendPoint]:
     since = date.today() - timedelta(days=days - 1)
+    since_dt = start_of_day(since)
     rows = (
         db.query(
             func.date(WasteEntry.created_at).label("entry_date"),
             func.coalesce(func.sum(WasteEntry.quantity), 0).label("total_weight"),
         )
-        .filter(func.date(WasteEntry.created_at) >= since.isoformat())
+        .filter(WasteEntry.created_at >= since_dt)
         .group_by(func.date(WasteEntry.created_at))
         .order_by(func.date(WasteEntry.created_at))
         .all()
@@ -122,7 +134,7 @@ def category_breakdown(
             WasteEntry.waste_category == category
         )
         if start:
-            query = query.filter(func.date(WasteEntry.created_at) >= start.isoformat())
+            query = query.filter(WasteEntry.created_at >= start_of_day(start))
         return float(query.scalar() or 0)
 
     def total_for_day(category: str, target: date) -> float:
@@ -130,7 +142,8 @@ def category_breakdown(
             db.query(func.coalesce(func.sum(WasteEntry.quantity), 0))
             .filter(
                 WasteEntry.waste_category == category,
-                func.date(WasteEntry.created_at) == target.isoformat(),
+                WasteEntry.created_at >= start_of_day(target),
+                WasteEntry.created_at < next_day(target),
             )
             .scalar()
             or 0
