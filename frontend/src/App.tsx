@@ -185,7 +185,7 @@ export function App() {
   const [notice, setNotice] = useState("");
   const [busy, setBusy] = useState(false);
 
-  const [loginForm, setLoginForm] = useState({ username: "admin", password: "password" });
+  const [loginForm, setLoginForm] = useState({ username: "staff1", password: "" });
   const [staffForm, setStaffForm] = useState({
     housingBlock: "HB 1",
     roomNumber: "",
@@ -490,7 +490,15 @@ export function App() {
                       setLoginForm((current) => ({ ...current, username: event.target.value }))
                     }
                     autoComplete="username"
+                    list="demo-users"
                   />
+                  <datalist id="demo-users">
+                    <option value="staff1" />
+                    <option value="staff2" />
+                    <option value="staff3" />
+                    <option value="operator1" />
+                    <option value="admin" />
+                  </datalist>
                 </div>
                 <div>
                   <label className="mb-2 block text-sm font-medium text-slate-700" htmlFor="password">
@@ -505,6 +513,13 @@ export function App() {
                       setLoginForm((current) => ({ ...current, password: event.target.value }))
                     }
                     autoComplete="current-password"
+                    placeholder={
+                      loginForm.username.startsWith("staff")
+                        ? "Not required for staff"
+                        : loginForm.username === "admin"
+                          ? "admins_key"
+                          : "op_key"
+                    }
                   />
                 </div>
                 <button
@@ -525,10 +540,12 @@ export function App() {
               />
               <div className="space-y-4">
                 {[
-                  ["staff1", "Staff collection entry"],
-                  ["operator1", "Operator quantification workflow"],
-                  ["admin", "Administrative analytics"],
-                ].map(([username, description]) => (
+                  ["staff1", "Staff collection entry", "No password"],
+                  ["staff2", "Staff collection entry", "No password"],
+                  ["staff3", "Staff collection entry", "No password"],
+                  ["operator1", "Operator quantification workflow", "op_key"],
+                  ["admin", "Administrative analytics", "admins_key"],
+                ].map(([username, description, credential]) => (
                   <article key={username} className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4">
                     <div className="flex items-center justify-between gap-3">
                       <div>
@@ -536,7 +553,7 @@ export function App() {
                         <p className="mt-1 text-sm text-slate-600">{description}</p>
                       </div>
                       <div className="rounded-full border border-slate-300 px-3 py-1 text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
-                        password
+                        {credential}
                       </div>
                     </div>
                   </article>

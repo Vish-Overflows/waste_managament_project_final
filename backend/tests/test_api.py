@@ -28,10 +28,19 @@ class UpgradedApiIntegrationTests(unittest.TestCase):
         cls.client_context.__exit__(None, None, None)
         cls.temp_dir.cleanup()
 
-    def login(self, username: str) -> dict:
+    def password_for(self, username: str) -> str:
+        if username.startswith("staff"):
+            return ""
+        if username == "operator1":
+            return "op_key"
+        if username == "admin":
+            return "admins_key"
+        return ""
+
+    def login(self, username: str, password: str | None = None) -> dict:
         response = self.client.post(
             "/api/auth/login",
-            json={"username": username, "password": "password"},
+            json={"username": username, "password": self.password_for(username) if password is None else password},
         )
         self.assertEqual(response.status_code, 200, response.text)
         return response.json()
@@ -57,6 +66,27 @@ class UpgradedApiIntegrationTests(unittest.TestCase):
         response = self.client.get("/healthz")
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json(), {"status": "ok"})
+
+    def test_login_rules(self) -> None:
+        staff = self.login("staff3", "")
+        self.assertEqual(staff["user"]["role"], "staff")
+
+        operator_wrong = self.client.post(
+            "/api/auth/login",
+            json={"username": "operator1", "password": ""},
+        )
+        self.assertEqual(operator_wrong.status_code, 401)
+
+        admin_wrong = self.client.post(
+            "/api/auth/login",
+            json={"username": "admin", "password": "op_key"},
+        )
+        self.assertEqual(admin_wrong.status_code, 401)
+
+        operator = self.login("operator1", "op_key")
+        self.assertEqual(operator["user"]["role"], "operator")
+        admin = self.login("admin", "admins_key")
+        self.assertEqual(admin["user"]["role"], "admin")
 
     def test_staff_operator_admin_workflow(self) -> None:
         collection_id = self.create_collection()

@@ -95,10 +95,11 @@ PYTHONPATH=backend .venv/bin/python -m unittest backend.tests.test_api
 
 ### Demo Users On The Upgrade Branch
 
-- `staff1 / password`
-- `staff2 / password`
-- `operator1 / password`
-- `admin / password`
+- `staff1` / no password
+- `staff2` / no password
+- `staff3` / no password
+- `operator1 / op_key`
+- `admin / admins_key`
 
 ### Railway Deployment For `production-upgrade`
 

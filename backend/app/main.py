@@ -25,20 +25,28 @@ logging.basicConfig(level=logging.INFO, format="%(message)s")
 
 def seed_users() -> None:
     demo_users = {
-        "staff1": "staff",
-        "staff2": "staff",
-        "operator1": "operator",
-        "admin": "admin",
+        "staff1": ("staff", ""),
+        "staff2": ("staff", ""),
+        "staff3": ("staff", ""),
+        "operator1": ("operator", "op_key"),
+        "admin": ("admin", "admins_key"),
     }
     with SessionLocal() as db:
-        for username, role in demo_users.items():
+        for username, (role, password) in demo_users.items():
             existing = db.query(User).filter(User.username == username).first()
             if existing:
+                existing.role = role
+                existing.password_hash = get_password_hash(password)
+                existing.active = True
+                try:
+                    db.commit()
+                except IntegrityError:
+                    db.rollback()
                 continue
             db.add(
                 User(
                     username=username,
-                    password_hash=get_password_hash("password"),
+                    password_hash=get_password_hash(password),
                     role=role,
                     active=True,
                 )
