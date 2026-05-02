@@ -10,6 +10,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy import inspect, text
+from sqlalchemy.exc import IntegrityError
 
 from app.api import auth, collections, dashboard, processing
 from app.core.config import get_settings
@@ -42,7 +43,10 @@ def seed_users() -> None:
                     active=True,
                 )
             )
-        db.commit()
+            try:
+                db.commit()
+            except IntegrityError:
+                db.rollback()
 
 
 def allow_direct_waste_entries() -> None:
