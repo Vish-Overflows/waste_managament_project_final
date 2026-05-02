@@ -39,8 +39,15 @@ export interface WasteEntry {
   housing_block: string;
   room_number: string;
   quantity: number;
-  collection_id: number;
+  collection_id: number | null;
   created_at: string;
+}
+
+export interface ProcessingTotals {
+  entries_count: number;
+  total_weight: number;
+  dry_weight: number;
+  wet_weight: number;
 }
 
 export interface PaginatedWasteEntries {

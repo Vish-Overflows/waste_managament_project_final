@@ -15,8 +15,8 @@ class Settings(BaseSettings):
         alias="DATABASE_URL",
     )
     secure_cookies: bool = Field(default=False, alias="SECURE_COOKIES")
-    cors_origins: list[str] = Field(
-        default_factory=lambda: ["http://localhost:5173", "http://127.0.0.1:5173"],
+    cors_origins: str = Field(
+        default="http://localhost:5173,http://127.0.0.1:5173",
         alias="CORS_ORIGINS",
     )
 
@@ -28,12 +28,14 @@ class Settings(BaseSettings):
 
     @field_validator("cors_origins", mode="before")
     @classmethod
-    def parse_cors_origins(cls, value: str | list[str]) -> list[str]:
+    def parse_cors_origins(cls, value: str | list[str]) -> str:
         if isinstance(value, list):
-            return value
-        if not value:
-            return []
-        return [origin.strip() for origin in value.split(",") if origin.strip()]
+            return ",".join(value)
+        return value or ""
+
+    @property
+    def cors_origin_list(self) -> list[str]:
+        return [origin.strip() for origin in self.cors_origins.split(",") if origin.strip()]
 
 
 @lru_cache

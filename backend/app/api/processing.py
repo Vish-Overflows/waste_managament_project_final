@@ -8,6 +8,7 @@ from app.dependencies import DbSession, require_role
 from app.models import HousingCollection, User, WasteEntry, WetProcessingUpdate
 from app.schemas import (
     PaginatedWasteEntries,
+    ProcessingTotals,
     WasteEntryRead,
     WasteProcessCreate,
     WetProcessingCreate,
@@ -24,22 +25,31 @@ def process_waste(
     db: DbSession,
     user: Annotated[User, Depends(require_role("operator", "admin"))],
 ) -> WasteEntryRead:
-    collection = db.query(HousingCollection).filter(HousingCollection.id == payload.collection_id).first()
-    if not collection:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Collection not found")
+    collection = None
+    source_location = payload.source_location
+    room_number = "Direct"
+    if payload.collection_id:
+        collection = db.query(HousingCollection).filter(HousingCollection.id == payload.collection_id).first()
+        if not collection:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Collection not found")
+        source_location = collection.housing_block
+        room_number = collection.room_number
+    elif not source_location:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Source location is required")
 
     entry = WasteEntry(
         employee_id=user.username,
         waste_category=payload.waste_category,
         waste_subtype=payload.waste_subtype,
-        housing_block=collection.housing_block,
-        room_number=collection.room_number,
+        housing_block=source_location,
+        room_number=room_number,
         quantity=payload.quantity,
-        collection_id=collection.id,
+        collection_id=collection.id if collection else None,
     )
     db.add(entry)
-    collection.status = "processed"
-    collection.processed_at = datetime.now(UTC)
+    if collection:
+        collection.status = "processed"
+        collection.processed_at = datetime.now(UTC)
     db.commit()
     db.refresh(entry)
     return WasteEntryRead.model_validate(entry)
@@ -58,15 +68,21 @@ def update_wet_processing(
         or 0
     )
     compost = float(payload.compost_quantity)
-    if compost > total_wet:
+    biogas = float(payload.biogas_quantity)
+    if compost == 0 and biogas == 0:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Compost quantity cannot exceed total wet waste processed.",
+            detail="Enter a compost or biogas quantity.",
+        )
+    if compost + biogas > total_wet:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Compost and biogas quantities cannot exceed total wet waste processed.",
         )
     update = WetProcessingUpdate(
         employee_id=user.username,
         compost_quantity=compost,
-        biogas_quantity=round(total_wet - compost, 2),
+        biogas_quantity=biogas,
         total_wet_reference=total_wet,
         notes=payload.notes,
     )
@@ -78,12 +94,14 @@ def update_wet_processing(
 @router.get("/entries", response_model=PaginatedWasteEntries)
 def list_processed_entries(
     db: DbSession,
-    _: Annotated[User, Depends(require_role("operator", "admin"))],
+    user: Annotated[User, Depends(require_role("operator", "admin"))],
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=20, ge=1, le=100),
     waste_category: str | None = Query(default=None, alias="wasteCategory"),
 ) -> PaginatedWasteEntries:
     query = db.query(WasteEntry)
+    if user.role == "operator":
+        query = query.filter(WasteEntry.employee_id == user.username)
     if waste_category:
         query = query.filter(WasteEntry.waste_category == waste_category)
     total = query.count()
@@ -98,6 +116,37 @@ def list_processed_entries(
         total=total,
         page=page,
         page_size=page_size,
+    )
+
+
+@router.get("/totals", response_model=ProcessingTotals)
+def processing_totals(
+    db: DbSession,
+    user: Annotated[User, Depends(require_role("operator", "admin"))],
+) -> ProcessingTotals:
+    query = db.query(WasteEntry)
+    if user.role == "operator":
+        query = query.filter(WasteEntry.employee_id == user.username)
+
+    total_weight = float(query.with_entities(func.coalesce(func.sum(WasteEntry.quantity), 0)).scalar() or 0)
+    entries_count = int(query.with_entities(func.count(WasteEntry.id)).scalar() or 0)
+    dry_weight = float(
+        query.with_entities(func.coalesce(func.sum(WasteEntry.quantity), 0))
+        .filter(WasteEntry.waste_category == "Dry Waste")
+        .scalar()
+        or 0
+    )
+    wet_weight = float(
+        query.with_entities(func.coalesce(func.sum(WasteEntry.quantity), 0))
+        .filter(WasteEntry.waste_category == "Wet Waste")
+        .scalar()
+        or 0
+    )
+    return ProcessingTotals(
+        entries_count=entries_count,
+        total_weight=round(total_weight, 2),
+        dry_weight=round(dry_weight, 2),
+        wet_weight=round(wet_weight, 2),
     )
 
 

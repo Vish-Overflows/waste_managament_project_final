@@ -16,7 +16,7 @@ Internal waste-management data entry application for campus sanitation staff.
 - `worker2 / password`
 - `admin / password`
 
-## Run Locally
+## Run Legacy App Locally
 
 ```bash
 python3 server.py
@@ -24,7 +24,7 @@ python3 server.py
 
 Open `http://127.0.0.1:8000`
 
-## Run Tests
+## Run Legacy Tests
 
 ```bash
 python3 -m unittest test_app.py
@@ -62,6 +62,36 @@ Expected services:
 - backend API on FastAPI
 - PostgreSQL for durable records
 - reverse proxy for a single entry point on `http://127.0.0.1`
+
+### Local Upgraded Stack Without Docker
+
+Run the FastAPI backend:
+
+```bash
+python3 -m venv .venv
+. .venv/bin/activate
+pip install -r backend/requirements.txt
+cp backend/.env.example backend/.env
+cd backend
+uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
+```
+
+Run the React frontend in a second terminal:
+
+```bash
+cd frontend
+npm install
+cp .env.example .env
+npm run dev
+```
+
+Open `http://127.0.0.1:5173`.
+
+Run upgraded API tests:
+
+```bash
+PYTHONPATH=backend .venv/bin/python -m unittest backend.tests.test_api
+```
 
 ### Demo Users On The Upgrade Branch
 

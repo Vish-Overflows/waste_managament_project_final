@@ -21,6 +21,7 @@ import type {
   OperatorStat,
   PaginatedCollections,
   PaginatedWasteEntries,
+  ProcessingTotals,
   SummaryMetric,
   TrendPoint,
   User,
@@ -39,8 +40,16 @@ ChartJS.register(
   Legend,
 );
 
-const HOUSING_BLOCKS = ["HB 1", "HB 2", "HB 3", "HB 4", "HB 5", "HB 6", "HB 7"];
-const ROOM_OPTIONS = ["101", "102", "103", "201", "202", "203"];
+const HOUSING_BLOCKS = Array.from({ length: 13 }, (_, index) => `HB ${index + 1}`);
+const SOURCE_LOCATIONS = [
+  "Housing Block",
+  "Sports Complex",
+  "Hostel Area",
+  "Food Outlet",
+  "Academic Area",
+  "Admin Building",
+  "Other Public Bin",
+];
 const DRY_SUBTYPES = ["Paper", "Plastic", "Glass", "Metal", "Cardboard", "Mixed Dry"];
 const WET_SUBTYPES = ["Food Waste", "Kitchen Waste", "Garden Waste", "Mixed Organics"];
 
@@ -179,23 +188,24 @@ export function App() {
   const [loginForm, setLoginForm] = useState({ username: "admin", password: "password" });
   const [staffForm, setStaffForm] = useState({
     housingBlock: "HB 1",
-    roomNumber: "101",
+    roomNumber: "",
     collectionDate: getToday(),
   });
   const [wasteForm, setWasteForm] = useState({
-    collectionId: "",
+    sourceLocation: SOURCE_LOCATIONS[0],
     wasteCategory: "Dry Waste",
     wasteSubtype: DRY_SUBTYPES[0],
     quantity: "",
   });
   const [wetForm, setWetForm] = useState({
     compostQuantity: "",
+    biogasQuantity: "",
     notes: "",
   });
 
   const [staffCollections, setStaffCollections] = useState<PaginatedCollections | null>(null);
-  const [pendingCollections, setPendingCollections] = useState<PaginatedCollections | null>(null);
   const [processedEntries, setProcessedEntries] = useState<PaginatedWasteEntries | null>(null);
+  const [processingTotals, setProcessingTotals] = useState<ProcessingTotals | null>(null);
   const [wetStatus, setWetStatus] = useState<WetProcessingStatus | null>(null);
   const [dashboard, setDashboard] = useState<DashboardBundle | null>(null);
   const [adminCollections, setAdminCollections] = useState<PaginatedCollections | null>(null);
@@ -218,8 +228,8 @@ export function App() {
   useEffect(() => {
     if (!user) {
       setStaffCollections(null);
-      setPendingCollections(null);
       setProcessedEntries(null);
+      setProcessingTotals(null);
       setWetStatus(null);
       setDashboard(null);
       setAdminCollections(null);
@@ -236,18 +246,6 @@ export function App() {
     }
   }, [wasteForm.wasteCategory, wasteForm.wasteSubtype]);
 
-  useEffect(() => {
-    if (pendingCollections?.items.length && !wasteForm.collectionId) {
-      setWasteForm((current) => ({
-        ...current,
-        collectionId: String(pendingCollections.items[0].id),
-      }));
-    }
-    if (!pendingCollections?.items.length && wasteForm.collectionId) {
-      setWasteForm((current) => ({ ...current, collectionId: "" }));
-    }
-  }, [pendingCollections, wasteForm.collectionId]);
-
   async function refreshRoleData(role: User["role"]) {
     setScreenError("");
 
@@ -259,13 +257,13 @@ export function App() {
       }
 
       if (role === "operator") {
-        const [collections, entries, wet] = await Promise.all([
-          apiFetch<PaginatedCollections>("/collections?page=1&page_size=20&status=collected"),
+        const [entries, totals, wet] = await Promise.all([
           apiFetch<PaginatedWasteEntries>("/processing/entries?page=1&page_size=12"),
+          apiFetch<ProcessingTotals>("/processing/totals"),
           apiFetch<WetProcessingStatus>("/processing/status"),
         ]);
-        setPendingCollections(collections);
         setProcessedEntries(entries);
+        setProcessingTotals(totals);
         setWetStatus(wet);
         return;
       }
@@ -360,11 +358,10 @@ export function App() {
         method: "POST",
         body: JSON.stringify({
           ...wasteForm,
-          collectionId: Number(wasteForm.collectionId),
           quantity: Number(wasteForm.quantity),
         }),
       });
-      setNotice("Segregation entry saved successfully.");
+      setNotice("Quantification entry saved successfully.");
       setWasteForm((current) => ({ ...current, quantity: "" }));
       if (user) {
         await refreshRoleData(user.role);
@@ -386,12 +383,13 @@ export function App() {
       await apiFetch<{ message: string }>("/processing/wet", {
         method: "POST",
         body: JSON.stringify({
-          compostQuantity: Number(wetForm.compostQuantity),
+          compostQuantity: Number(wetForm.compostQuantity || 0),
+          biogasQuantity: Number(wetForm.biogasQuantity || 0),
           notes: wetForm.notes || undefined,
         }),
       });
       setNotice("Wet processing update recorded.");
-      setWetForm({ compostQuantity: "", notes: "" });
+      setWetForm({ compostQuantity: "", biogasQuantity: "", notes: "" });
       if (user) {
         await refreshRoleData(user.role);
       }
@@ -429,7 +427,7 @@ export function App() {
             </p>
             <h1 className="mt-2 text-3xl font-semibold">Campus Waste Management System</h1>
             <p className="mt-3 max-w-3xl text-sm leading-6 text-slate-200">
-              Structured collection, segregation, and processing records for housing waste operations.
+              Structured collection, quantification, and processing records for campus waste operations.
             </p>
           </div>
           <div className="flex items-center gap-3">
@@ -477,7 +475,7 @@ export function App() {
               <SectionHeading
                 eyebrow="System Access"
                 title="Sign in to the operations portal"
-                body="Role-based access is separated for field collection staff, segregation operators, and administrative oversight."
+                body="Role-based access is separated for field collection staff, waste quantification operators, and administrative oversight."
               />
               <form className="space-y-4" onSubmit={handleLogin}>
                 <div>
@@ -528,7 +526,7 @@ export function App() {
               <div className="space-y-4">
                 {[
                   ["staff1", "Staff collection entry"],
-                  ["operator1", "Operator segregation workflow"],
+                  ["operator1", "Operator quantification workflow"],
                   ["admin", "Administrative analytics"],
                 ].map(([username, description]) => (
                   <article key={username} className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4">
@@ -554,7 +552,7 @@ export function App() {
               <SectionHeading
                 eyebrow="Staff Workflow"
                 title="Record housing collection"
-                body="Field staff only records whether waste has been collected from a housing room. Segregation is handled later by the operator team."
+                body="Field staff records whether waste has been collected from a housing room. Quantification is handled later by the operator team."
               />
               <form className="space-y-4" onSubmit={handleStaffSubmit}>
                 <div className="grid gap-4 md:grid-cols-2">
@@ -581,20 +579,23 @@ export function App() {
                     <label className="mb-2 block text-sm font-medium text-slate-700" htmlFor="room-number">
                       Room Number
                     </label>
-                    <select
+                    <input
                       id="room-number"
+                      type="text"
                       className="w-full rounded-2xl border border-slate-300 px-4 py-3 text-sm outline-none transition focus:border-slate-500"
                       value={staffForm.roomNumber}
+                      placeholder="Enter room number"
+                      maxLength={32}
+                      pattern="[A-Za-z0-9][A-Za-z0-9 /-]*"
+                      title="Use letters, numbers, spaces, hyphens, or slashes."
+                      required
                       onChange={(event) =>
                         setStaffForm((current) => ({ ...current, roomNumber: event.target.value }))
                       }
-                    >
-                      {ROOM_OPTIONS.map((room) => (
-                        <option key={room} value={room}>
-                          {room}
-                        </option>
-                      ))}
-                    </select>
+                      onBlur={() =>
+                        setStaffForm((current) => ({ ...current, roomNumber: current.roomNumber.trim() }))
+                      }
+                    />
                   </div>
                 </div>
                 <div>
@@ -646,16 +647,18 @@ export function App() {
           <>
             <section className="grid gap-4 md:grid-cols-3">
               <MetricCard
-                label="Pending Collections"
-                value={pendingCollections?.total ?? 0}
+                label="My Entries"
+                value={processingTotals?.entries_count ?? 0}
               />
               <MetricCard
-                label="Processed Entries"
-                value={processedEntries?.total ?? 0}
+                label="My Total Waste"
+                value={formatWeight(processingTotals?.total_weight ?? 0)}
               />
               <MetricCard
-                label="Total Wet Processed"
-                value={formatWeight(wetStatus?.total_wet_processed ?? 0)}
+                label="My Dry / Wet Split"
+                value={`${formatWeight(processingTotals?.dry_weight ?? 0)} / ${formatWeight(
+                  processingTotals?.wet_weight ?? 0,
+                )}`}
               />
             </section>
 
@@ -663,26 +666,25 @@ export function App() {
               <article className="rounded-3xl border border-slate-200 bg-white p-7 shadow-sm">
                 <SectionHeading
                   eyebrow="Operator Workflow"
-                  title="Segregate collected waste"
-                  body="Select a collected housing record, classify it as dry or wet waste, and record the processed quantity for operational tracking."
+                  title="Quantify collected waste"
+                  body="Record waste directly by source location, category, subtype, and measured quantity."
                 />
                 <form className="space-y-4" onSubmit={handleWasteSubmit}>
                   <div>
-                    <label className="mb-2 block text-sm font-medium text-slate-700" htmlFor="collection-select">
-                      Pending Collection
+                    <label className="mb-2 block text-sm font-medium text-slate-700" htmlFor="source-location">
+                      Source Location
                     </label>
                     <select
-                      id="collection-select"
+                      id="source-location"
                       className="w-full rounded-2xl border border-slate-300 px-4 py-3 text-sm outline-none transition focus:border-slate-500"
-                      value={wasteForm.collectionId}
+                      value={wasteForm.sourceLocation}
                       onChange={(event) =>
-                        setWasteForm((current) => ({ ...current, collectionId: event.target.value }))
+                        setWasteForm((current) => ({ ...current, sourceLocation: event.target.value }))
                       }
                     >
-                      {!pendingCollections?.items.length ? <option value="">No pending collections</option> : null}
-                      {(pendingCollections?.items ?? []).map((item) => (
-                        <option key={item.id} value={item.id}>
-                          {item.housing_block}-{item.room_number} | {formatDate(item.collection_date)} | {item.employee_id}
+                      {SOURCE_LOCATIONS.map((location) => (
+                        <option key={location} value={location}>
+                          {location}
                         </option>
                       ))}
                     </select>
@@ -738,6 +740,7 @@ export function App() {
                       min="0.01"
                       className="w-full rounded-2xl border border-slate-300 px-4 py-3 text-sm outline-none transition focus:border-slate-500"
                       value={wasteForm.quantity}
+                      required
                       onChange={(event) =>
                         setWasteForm((current) => ({ ...current, quantity: event.target.value }))
                       }
@@ -745,10 +748,10 @@ export function App() {
                   </div>
                   <button
                     type="submit"
-                    disabled={busy || !wasteForm.collectionId}
+                    disabled={busy || !wasteForm.sourceLocation}
                     className="w-full rounded-2xl bg-slate-900 px-4 py-3 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-400"
                   >
-                    {busy ? "Saving…" : "Save Segregation Entry"}
+                    {busy ? "Saving…" : "Save Quantification Entry"}
                   </button>
                 </form>
               </article>
@@ -756,8 +759,8 @@ export function App() {
               <article className="rounded-3xl border border-slate-200 bg-white p-7 shadow-sm">
                 <SectionHeading
                   eyebrow="Wet Processing"
-                  title="Record compost conversion"
-                  body="Biogas output is derived automatically from total wet waste processed minus compost converted."
+                  title="Record compost or biogas output"
+                  body="Enter compost and biogas quantities produced from the wet waste stream."
                 />
                 <form className="space-y-4" onSubmit={handleWetSubmit}>
                   <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4 text-sm text-slate-700">
@@ -783,6 +786,22 @@ export function App() {
                     />
                   </div>
                   <div>
+                    <label className="mb-2 block text-sm font-medium text-slate-700" htmlFor="biogas-quantity">
+                      Biogas Quantity (kg)
+                    </label>
+                    <input
+                      id="biogas-quantity"
+                      type="number"
+                      step="0.01"
+                      min="0"
+                      className="w-full rounded-2xl border border-slate-300 px-4 py-3 text-sm outline-none transition focus:border-slate-500"
+                      value={wetForm.biogasQuantity}
+                      onChange={(event) =>
+                        setWetForm((current) => ({ ...current, biogasQuantity: event.target.value }))
+                      }
+                    />
+                  </div>
+                  <div>
                     <label className="mb-2 block text-sm font-medium text-slate-700" htmlFor="wet-notes">
                       Notes
                     </label>
@@ -801,7 +820,7 @@ export function App() {
                     disabled={busy}
                     className="w-full rounded-2xl bg-emerald-700 px-4 py-3 text-sm font-semibold text-white transition hover:bg-emerald-600 disabled:cursor-not-allowed disabled:bg-emerald-300"
                   >
-                    {busy ? "Saving…" : "Record Compost Update"}
+                    {busy ? "Saving…" : "Record Wet Processing"}
                   </button>
                 </form>
                 {wetStatus?.latest_update ? (
@@ -809,48 +828,29 @@ export function App() {
                     <p className="font-semibold text-slate-900">Latest update</p>
                     <p className="mt-2">Recorded by: {wetStatus.latest_update.employee_id}</p>
                     <p>Compost: {formatWeight(wetStatus.latest_update.compost_quantity)}</p>
-                    <p>Biogas (derived): {formatWeight(wetStatus.latest_update.biogas_quantity)}</p>
+                    <p>Biogas: {formatWeight(wetStatus.latest_update.biogas_quantity)}</p>
                     <p>Logged at: {formatDateTime(wetStatus.latest_update.created_at)}</p>
                   </div>
                 ) : null}
               </article>
             </section>
 
-            <section className="mt-6 grid gap-6 xl:grid-cols-[0.95fr,1.05fr]">
-              <article className="rounded-3xl border border-slate-200 bg-white p-7 shadow-sm">
-                <SectionHeading
-                  eyebrow="Pending Queue"
-                  title="Collections awaiting segregation"
-                />
-                <DataTable
-                  headers={["Date", "Block", "Room", "Staff", "Status"]}
-                  rows={(pendingCollections?.items ?? []).map((item) => [
-                    formatDate(item.collection_date),
-                    item.housing_block,
-                    item.room_number,
-                    item.employee_id,
-                    item.status,
-                  ])}
-                  emptyMessage="No pending collections are awaiting segregation."
-                />
-              </article>
-
+            <section className="mt-6">
               <article className="rounded-3xl border border-slate-200 bg-white p-7 shadow-sm">
                 <SectionHeading
                   eyebrow="Processed Records"
-                  title="Latest segregation entries"
+                  title="My latest quantification entries"
                 />
                 <DataTable
-                  headers={["Processed At", "Block", "Room", "Category", "Subtype", "Qty"]}
+                  headers={["Processed At", "Source", "Category", "Subtype", "Qty"]}
                   rows={(processedEntries?.items ?? []).map((item) => [
                     formatDateTime(item.created_at),
                     item.housing_block,
-                    item.room_number,
                     item.waste_category,
                     item.waste_subtype,
                     formatWeight(item.quantity),
                   ])}
-                  emptyMessage="No segregation entries have been recorded yet."
+                  emptyMessage="No quantification entries have been recorded yet."
                 />
               </article>
             </section>
@@ -861,9 +861,9 @@ export function App() {
           <>
             <section className="rounded-3xl border border-slate-200 bg-white p-7 shadow-sm">
               <SectionHeading
-                eyebrow="Administrative Dashboard"
-                title="Operational analytics and oversight"
-                body="This view summarizes daily and weekly waste movement, segregation throughput, wet processing status, and worker-level operational reports."
+                  eyebrow="Administrative Dashboard"
+                  title="Operational analytics and oversight"
+                body="This view summarizes daily and weekly waste movement, operator throughput, wet processing status, and worker-level operational reports."
               />
               <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
                 <MetricCard label="Collections Today" value={metricValue("Collections Today")} />
@@ -876,7 +876,7 @@ export function App() {
                   label="Waste Processed This Week"
                   value={formatWeight(metricValue("Waste Processed This Week"))}
                 />
-                <MetricCard label="Pending Segregation" value={metricValue("Pending Segregation")} />
+                <MetricCard label="Pending Staff Collections" value={metricValue("Pending Staff Collections")} />
               </div>
             </section>
 
@@ -957,8 +957,8 @@ export function App() {
             <section className="mt-6 grid gap-6 xl:grid-cols-2">
               <article className="rounded-3xl border border-slate-200 bg-white p-7 shadow-sm">
                 <SectionHeading
-                  eyebrow="Block Analytics"
-                  title="Processed weight by housing block"
+                  eyebrow="Source Analytics"
+                  title="Processed weight by source location"
                 />
                 {dashboard?.blocks.length ? (
                   <Bar
@@ -982,7 +982,7 @@ export function App() {
               <article className="rounded-3xl border border-slate-200 bg-white p-7 shadow-sm">
                 <SectionHeading
                   eyebrow="Operator Performance"
-                  title="Segregation throughput"
+                  title="Quantification throughput"
                 />
                 {(dashboard?.operators ?? []).length ? (
                   <div className="space-y-4">
@@ -1011,7 +1011,7 @@ export function App() {
                     ))}
                   </div>
                 ) : (
-                  <EmptyState message="Operator statistics will appear after segregation entries are recorded." />
+                  <EmptyState message="Operator statistics will appear after quantification entries are recorded." />
                 )}
               </article>
             </section>
@@ -1040,14 +1040,14 @@ export function App() {
               <article className="rounded-3xl border border-slate-200 bg-white p-7 shadow-sm">
                 <SectionHeading
                   eyebrow="Operator Records"
-                  title="Latest segregation entries"
-                  body="This is the downstream operator record of how collected waste was classified and processed."
+                  title="Latest quantification entries"
+                  body="This is the operator record of how campus waste was sourced, categorized, and weighed."
                 />
                 <DataTable
-                  headers={["Processed At", "Block", "Category", "Subtype", "Qty"]}
+                  headers={["Processed At", "Source", "Category", "Subtype", "Qty"]}
                   rows={(processedEntries?.items ?? []).map((item) => [
                     formatDateTime(item.created_at),
-                    `${item.housing_block}-${item.room_number}`,
+                    item.room_number === "Direct" ? item.housing_block : `${item.housing_block}-${item.room_number}`,
                     item.waste_category,
                     item.waste_subtype,
                     formatWeight(item.quantity),
@@ -1061,7 +1061,7 @@ export function App() {
             <section className="mt-6 rounded-3xl border border-slate-200 bg-white p-7 shadow-sm">
               <SectionHeading
                 eyebrow="Wet Processing Status"
-                title="Latest compost and derived biogas update"
+                title="Latest compost and biogas update"
               />
               {wetStatus?.latest_update ? (
                 <div className="grid gap-4 md:grid-cols-4">
@@ -1071,7 +1071,7 @@ export function App() {
                     value={formatWeight(wetStatus.latest_update.compost_quantity)}
                   />
                   <MetricCard
-                    label="Biogas Derived"
+                    label="Biogas Logged"
                     value={formatWeight(wetStatus.latest_update.biogas_quantity)}
                   />
                   <MetricCard

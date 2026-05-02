@@ -82,7 +82,7 @@ def summary(
             SummaryMetric(label="Collections Recorded", value=int(total_collections)),
             SummaryMetric(label="Collections Today", value=int(collections_today)),
             SummaryMetric(label="Collections This Week", value=int(collections_this_week)),
-            SummaryMetric(label="Pending Segregation", value=int(pending_collections)),
+            SummaryMetric(label="Pending Staff Collections", value=int(pending_collections)),
             SummaryMetric(label="Collections Processed", value=int(processed_collections)),
             SummaryMetric(label="Waste Processed Today", value=round(processed_today, 2)),
             SummaryMetric(label="Waste Processed This Week", value=round(processed_this_week, 2)),

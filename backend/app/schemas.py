@@ -25,10 +25,10 @@ class TokenResponse(BaseModel):
 
 
 class CollectionCreate(BaseModel):
-    model_config = ConfigDict(populate_by_name=True)
+    model_config = ConfigDict(populate_by_name=True, str_strip_whitespace=True)
 
-    housing_block: str = Field(alias="housingBlock")
-    room_number: str = Field(alias="roomNumber")
+    housing_block: str = Field(alias="housingBlock", min_length=1, max_length=32)
+    room_number: str = Field(alias="roomNumber", min_length=1, max_length=32)
     collection_date: date = Field(alias="collectionDate")
 
 
@@ -53,12 +53,13 @@ class PaginatedCollections(BaseModel):
 
 
 class WasteProcessCreate(BaseModel):
-    model_config = ConfigDict(populate_by_name=True)
+    model_config = ConfigDict(populate_by_name=True, str_strip_whitespace=True)
 
-    collection_id: int = Field(alias="collectionId")
+    collection_id: int | None = Field(default=None, alias="collectionId")
+    source_location: str | None = Field(default=None, alias="sourceLocation", max_length=120)
     waste_category: Literal["Dry Waste", "Wet Waste"] = Field(alias="wasteCategory")
-    waste_subtype: str = Field(alias="wasteSubtype")
-    quantity: float
+    waste_subtype: str = Field(alias="wasteSubtype", min_length=1, max_length=120)
+    quantity: float = Field(gt=0)
 
 
 class WasteEntryRead(BaseModel):
@@ -71,15 +72,23 @@ class WasteEntryRead(BaseModel):
     housing_block: str
     room_number: str
     quantity: float
-    collection_id: int
+    collection_id: int | None
     created_at: datetime
 
 
 class WetProcessingCreate(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 
-    compost_quantity: float = Field(alias="compostQuantity", gt=0)
+    compost_quantity: float = Field(default=0, alias="compostQuantity", ge=0)
+    biogas_quantity: float = Field(default=0, alias="biogasQuantity", ge=0)
     notes: str | None = None
+
+
+class ProcessingTotals(BaseModel):
+    entries_count: int
+    total_weight: float
+    dry_weight: float
+    wet_weight: float
 
 
 class WetProcessingRecord(BaseModel):

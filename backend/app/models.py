@@ -42,7 +42,11 @@ class WasteEntry(Base):
     housing_block: Mapped[str] = mapped_column(String(32), index=True)
     room_number: Mapped[str] = mapped_column(String(32))
     quantity: Mapped[float] = mapped_column(Numeric(10, 2))
-    collection_id: Mapped[int] = mapped_column(ForeignKey("housing_collections.id"), index=True)
+    collection_id: Mapped[int | None] = mapped_column(
+        ForeignKey("housing_collections.id"),
+        index=True,
+        nullable=True,
+    )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     collection: Mapped["HousingCollection"] = relationship(back_populates="waste_entries")
