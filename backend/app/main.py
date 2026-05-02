@@ -1,11 +1,14 @@
 import json
 import logging
+import os
 import time
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import FileResponse, JSONResponse
+from fastapi.staticfiles import StaticFiles
 from sqlalchemy import inspect, text
 
 from app.api import auth, collections, dashboard, processing
@@ -170,3 +173,28 @@ app.include_router(auth.router, prefix=settings.api_prefix)
 app.include_router(collections.router, prefix=settings.api_prefix)
 app.include_router(processing.router, prefix=settings.api_prefix)
 app.include_router(dashboard.router, prefix=settings.api_prefix)
+
+
+def mount_frontend() -> None:
+    frontend_dir = Path(os.getenv("FRONTEND_DIST_DIR", "/app/frontend_dist"))
+    index_file = frontend_dir / "index.html"
+    assets_dir = frontend_dir / "assets"
+    if not index_file.exists():
+        return
+
+    if assets_dir.exists():
+        app.mount("/assets", StaticFiles(directory=assets_dir), name="assets")
+
+    @app.get("/")
+    def frontend_index():
+        return FileResponse(index_file)
+
+    @app.get("/{path:path}")
+    def frontend_fallback(path: str):
+        requested_file = frontend_dir / path
+        if requested_file.is_file():
+            return FileResponse(requested_file)
+        return FileResponse(index_file)
+
+
+mount_frontend()

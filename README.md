@@ -149,24 +149,32 @@ Railway docs used for this setup:
 
 ## Stable Public Deployment
 
-The exact same app can be deployed as a public website on Render using the included [Dockerfile](/Users/vishnusinha/Documents/project_sushoban/Dockerfile:1).
+The production-upgrade app can be deployed as a single public Render web service using the included [Dockerfile](/Users/vishnusinha/Documents/project_sushoban/Dockerfile:1). This Dockerfile builds the React frontend, serves it from FastAPI, and keeps the API under `/api` on the same public URL.
 
 Recommended setup:
 
+- Create a Render `Postgres` database
 - Create a new Render `Web Service`
 - Choose the `Docker` runtime
-- Deploy this repository
-- Attach a persistent disk
-- Set `DB_PATH=/app/data/waste_management.db`
+- Deploy the `production-upgrade` branch
+- Keep the Dockerfile path as `Dockerfile`
+- Set `DATABASE_URL` to the Render Postgres internal database URL
 
-Why the disk matters:
+Required web service variables:
 
-- this app stores data in `SQLite`
-- without a persistent disk, Render's filesystem is ephemeral and your saved entries can be lost on restart or redeploy
+```bash
+DATABASE_URL=<Render Postgres internal database URL>
+SECRET_KEY=<long-random-secret>
+SECURE_COOKIES=true
+CORS_ORIGINS=https://your-service-name.onrender.com
+WEB_CONCURRENCY=2
+```
 
-Suggested disk mount path:
+Health check:
 
-- `/app/data`
+```text
+https://your-service-name.onrender.com/healthz
+```
 
 Suggested Render URL outcome:
 
