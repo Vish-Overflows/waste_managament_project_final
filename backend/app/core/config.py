@@ -3,6 +3,8 @@ from functools import lru_cache
 from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+DEFAULT_DATABASE_URL = "sqlite:///./campus_waste_management.db"
+
 
 class Settings(BaseSettings):
     app_name: str = "Campus Waste Management System"
@@ -11,7 +13,7 @@ class Settings(BaseSettings):
     access_token_expire_minutes: int = 60 * 10
     web_concurrency: int = Field(default=2, alias="WEB_CONCURRENCY")
     database_url: str = Field(
-        default="sqlite:///./campus_waste_management.db",
+        default=DEFAULT_DATABASE_URL,
         alias="DATABASE_URL",
     )
     secure_cookies: bool = Field(default=False, alias="SECURE_COOKIES")
@@ -35,7 +37,9 @@ class Settings(BaseSettings):
 
     @field_validator("database_url", mode="before")
     @classmethod
-    def normalize_database_url(cls, value: str) -> str:
+    def normalize_database_url(cls, value: str | None) -> str:
+        if not value:
+            return DEFAULT_DATABASE_URL
         if value.startswith("postgres://"):
             return value.replace("postgres://", "postgresql+psycopg://", 1)
         if value.startswith("postgresql://"):
