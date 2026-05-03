@@ -24,8 +24,7 @@ COPY --from=frontend-build /frontend/dist /app/frontend_dist
 
 ENV FRONTEND_DIST_DIR=/app/frontend_dist
 ENV PYTHONUNBUFFERED=1
-ENV PORT=10000
 
-EXPOSE 10000
+EXPOSE 8000
 
-CMD ["sh", "-c", "gunicorn app.main:app -k uvicorn.workers.UvicornWorker --bind 0.0.0.0:${PORT:-10000} --workers ${WEB_CONCURRENCY:-2} --timeout 120"]
+CMD ["sh", "-c", "gunicorn app.main:app -k uvicorn.workers.UvicornWorker --bind 0.0.0.0:${PORT:-8000} --workers ${WEB_CONCURRENCY:-2} --timeout 120"]
