@@ -3,6 +3,7 @@ from __future__ import annotations
 import os
 import tempfile
 import unittest
+from datetime import date
 from pathlib import Path
 
 from fastapi.testclient import TestClient
@@ -60,6 +61,7 @@ class UpgradedApiIntegrationTests(unittest.TestCase):
             headers=self.auth_headers("staff1"),
         )
         self.assertEqual(response.status_code, 200, response.text)
+        self.assertEqual(response.json()["collection_date"], date.today().isoformat())
         return response.json()["id"]
 
     def test_healthcheck(self) -> None:
@@ -130,6 +132,17 @@ class UpgradedApiIntegrationTests(unittest.TestCase):
         self.assertIn("Collections Recorded", labels)
         self.assertIn("Staff Collection Records", labels)
         self.assertIn("Wet Waste", labels)
+
+        report = self.client.get(
+            "/api/dashboard/export/weekly",
+            headers=self.auth_headers("admin"),
+        )
+        self.assertEqual(report.status_code, 200, report.text)
+        self.assertIn("text/csv", report.headers["content-type"])
+        self.assertIn("Individual Staff Collection Entries", report.text)
+        self.assertIn("Individual Operator Entries", report.text)
+        self.assertIn("Dry Waste Source Patterns", report.text)
+        self.assertIn("Wet Processing Updates", report.text)
 
     def test_operator_can_quantify_public_bin_waste(self) -> None:
         processed = self.client.post(

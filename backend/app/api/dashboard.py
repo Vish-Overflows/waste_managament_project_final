@@ -1,7 +1,11 @@
+import csv
+from collections import defaultdict
 from datetime import UTC, date, datetime, time, timedelta
+from io import StringIO
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, Query
+from fastapi.responses import Response
 from sqlalchemy import func
 
 from app.dependencies import DbSession, require_role
@@ -24,6 +28,18 @@ def start_of_day(value: date) -> datetime:
 
 def next_day(value: date) -> datetime:
     return start_of_day(value) + timedelta(days=1)
+
+
+def write_section(writer, title: str, headers: list[str], rows: list[list[object]]) -> None:
+    writer.writerow([title])
+    writer.writerow(headers)
+    for row in rows:
+        writer.writerow(row)
+    writer.writerow([])
+
+
+def to_weight(value: object) -> float:
+    return round(float(value or 0), 2)
 
 
 @router.get("/summary", response_model=DashboardSummary)
@@ -217,3 +233,162 @@ def operators(
         )
         for row in rows
     ]
+
+
+@router.get("/export/weekly")
+def export_weekly_report(
+    db: DbSession,
+    _: Annotated[User, Depends(require_role("admin"))],
+) -> Response:
+    today = date.today()
+    since = today - timedelta(days=6)
+    since_dt = start_of_day(since)
+    until_dt = next_day(today)
+
+    collections = (
+        db.query(HousingCollection)
+        .filter(HousingCollection.created_at >= since_dt, HousingCollection.created_at < until_dt)
+        .order_by(HousingCollection.created_at.desc(), HousingCollection.id.desc())
+        .all()
+    )
+    entries = (
+        db.query(WasteEntry)
+        .filter(WasteEntry.created_at >= since_dt, WasteEntry.created_at < until_dt)
+        .order_by(WasteEntry.created_at.desc(), WasteEntry.id.desc())
+        .all()
+    )
+    wet_updates = (
+        db.query(WetProcessingUpdate)
+        .filter(WetProcessingUpdate.created_at >= since_dt, WetProcessingUpdate.created_at < until_dt)
+        .order_by(WetProcessingUpdate.created_at.desc(), WetProcessingUpdate.id.desc())
+        .all()
+    )
+
+    daily_totals: dict[str, dict[str, float]] = defaultdict(lambda: {"Dry Waste": 0.0, "Wet Waste": 0.0})
+    dry_sources: dict[str, float] = defaultdict(float)
+    dry_subtypes: dict[str, float] = defaultdict(float)
+    wet_subtypes: dict[str, float] = defaultdict(float)
+    category_totals: dict[str, float] = defaultdict(float)
+
+    for entry in entries:
+        entry_date = entry.created_at.date().isoformat()
+        quantity = to_weight(entry.quantity)
+        daily_totals[entry_date][entry.waste_category] += quantity
+        category_totals[entry.waste_category] += quantity
+        if entry.waste_category == "Dry Waste":
+            dry_sources[entry.housing_block] += quantity
+            dry_subtypes[entry.waste_subtype] += quantity
+        if entry.waste_category == "Wet Waste":
+            wet_subtypes[entry.waste_subtype] += quantity
+
+    compost_total = sum(to_weight(update.compost_quantity) for update in wet_updates)
+    biogas_total = sum(to_weight(update.biogas_quantity) for update in wet_updates)
+
+    output = StringIO()
+    writer = csv.writer(output)
+    writer.writerow(["Campus Waste Management Weekly Report"])
+    writer.writerow(["Period", since.isoformat(), today.isoformat()])
+    writer.writerow(["Generated At", datetime.now(UTC).isoformat()])
+    writer.writerow([])
+
+    write_section(
+        writer,
+        "Summary",
+        ["Metric", "Value"],
+        [
+            ["Staff collection records", len(collections)],
+            ["Operator entries", len(entries)],
+            ["Dry waste total kg", to_weight(category_totals["Dry Waste"])],
+            ["Wet waste total kg", to_weight(category_totals["Wet Waste"])],
+            ["Total waste kg", to_weight(sum(category_totals.values()))],
+            ["Compost logged kg", to_weight(compost_total)],
+            ["Biogas logged kg", to_weight(biogas_total)],
+        ],
+    )
+    write_section(
+        writer,
+        "Individual Staff Collection Entries",
+        ["Collection Date", "Block", "Room", "Staff", "Status", "Recorded At"],
+        [
+            [
+                item.collection_date.isoformat(),
+                item.housing_block,
+                item.room_number,
+                item.employee_id,
+                item.status,
+                item.created_at.isoformat(),
+            ]
+            for item in collections
+        ],
+    )
+    write_section(
+        writer,
+        "Individual Operator Entries",
+        ["Processed At", "Operator", "Source", "Category", "Subtype", "Quantity kg"],
+        [
+            [
+                item.created_at.isoformat(),
+                item.employee_id,
+                item.housing_block,
+                item.waste_category,
+                item.waste_subtype,
+                to_weight(item.quantity),
+            ]
+            for item in entries
+        ],
+    )
+    write_section(
+        writer,
+        "Per-Day Waste Totals",
+        ["Date", "Dry kg", "Wet kg", "Total kg"],
+        [
+            [
+                day,
+                to_weight(values["Dry Waste"]),
+                to_weight(values["Wet Waste"]),
+                to_weight(values["Dry Waste"] + values["Wet Waste"]),
+            ]
+            for day, values in sorted(daily_totals.items())
+        ],
+    )
+    write_section(
+        writer,
+        "Dry Waste Source Patterns",
+        ["Source", "Dry kg"],
+        [[source, to_weight(total)] for source, total in sorted(dry_sources.items(), key=lambda item: item[1], reverse=True)],
+    )
+    write_section(
+        writer,
+        "Dry Subtype Breakdown",
+        ["Subtype", "Dry kg"],
+        [[subtype, to_weight(total)] for subtype, total in sorted(dry_subtypes.items())],
+    )
+    write_section(
+        writer,
+        "Wet Subtype Breakdown",
+        ["Subtype", "Wet kg"],
+        [[subtype, to_weight(total)] for subtype, total in sorted(wet_subtypes.items())],
+    )
+    write_section(
+        writer,
+        "Wet Processing Updates",
+        ["Recorded At", "Operator", "Compost kg", "Biogas kg", "Wet Reference kg", "Notes"],
+        [
+            [
+                item.created_at.isoformat(),
+                item.employee_id,
+                to_weight(item.compost_quantity),
+                to_weight(item.biogas_quantity),
+                to_weight(item.total_wet_reference),
+                item.notes or "",
+            ]
+            for item in wet_updates
+        ],
+    )
+
+    filename = f"campus-waste-weekly-report-{today.isoformat}.csv"
+    return Response(
+        content=output.getvalue(),
+        media_type="text/csv",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )

@@ -38,7 +38,7 @@ def create_collection(
         employee_id=user.username,
         housing_block=payload.housing_block,
         room_number=payload.room_number,
-        collection_date=payload.collection_date,
+        collection_date=date.today(),
         status="collected",
     )
     db.add(collection)

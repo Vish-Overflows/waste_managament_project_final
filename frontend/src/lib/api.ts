@@ -46,3 +46,24 @@ export async function apiFetch<T>(path: string, options: RequestInit = {}): Prom
   }
   return payload as T;
 }
+
+export async function apiDownload(path: string): Promise<Blob> {
+  const token = getAuthToken();
+  const headers = new Headers();
+  if (token) {
+    headers.set("Authorization", `Bearer ${token}`);
+  }
+
+  const response = await fetch(`${API_BASE_URL}${path}`, {
+    credentials: "include",
+    headers,
+  });
+
+  if (!response.ok) {
+    if (response.status === 401) {
+      clearAuthToken();
+    }
+    throw new Error("Download failed");
+  }
+  return response.blob();
+}

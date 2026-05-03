@@ -12,7 +12,7 @@ import {
   Tooltip,
 } from "chart.js";
 
-import { apiFetch, clearAuthToken, setAuthToken } from "./lib/api";
+import { apiDownload, apiFetch, clearAuthToken, setAuthToken } from "./lib/api";
 import type {
   BlockStat,
   CategoryBreakdownPoint,
@@ -75,6 +75,10 @@ function formatDate(value: string) {
     month: "short",
     year: "numeric",
   });
+}
+
+function formatDateInput(value: string) {
+  return formatDate(value);
 }
 
 function formatDateTime(value: string) {
@@ -328,7 +332,7 @@ export function App() {
     try {
       await apiFetch<CollectionRecord>("/collections", {
         method: "POST",
-        body: JSON.stringify(staffForm),
+        body: JSON.stringify({ ...staffForm, collectionDate: getToday() }),
       });
       setNotice(`Collection recorded for ${staffForm.housingBlock}-${staffForm.roomNumber}.`);
       setStaffForm((current) => ({ ...current, collectionDate: getToday() }));
@@ -337,6 +341,29 @@ export function App() {
       }
     } catch (error) {
       setScreenError(error instanceof Error ? error.message : "Collection could not be saved.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function handleWeeklyExport() {
+    setBusy(true);
+    setScreenError("");
+    setNotice("");
+
+    try {
+      const report = await apiDownload("/dashboard/export/weekly");
+      const downloadUrl = window.URL.createObjectURL(report);
+      const link = document.createElement("a");
+      link.href = downloadUrl;
+      link.download = `campus-waste-weekly-report-${getToday()}.csv`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.URL.revokeObjectURL(downloadUrl);
+      setNotice("Weekly analytics report exported.");
+    } catch (error) {
+      setScreenError(error instanceof Error ? error.message : "Report export failed.");
     } finally {
       setBusy(false);
     }
@@ -636,18 +663,12 @@ export function App() {
                   </div>
                 </div>
                 <div>
-                  <label className="mb-2 block text-sm font-medium text-slate-700" htmlFor="collection-date">
+                  <p className="mb-2 block text-sm font-medium text-slate-700">
                     Collection Date
-                  </label>
-                  <input
-                    id="collection-date"
-                    type="date"
-                    className="w-full rounded-2xl border border-slate-300 px-4 py-3 text-sm outline-none transition focus:border-slate-500"
-                    value={staffForm.collectionDate}
-                    onChange={(event) =>
-                      setStaffForm((current) => ({ ...current, collectionDate: event.target.value }))
-                    }
-                  />
+                  </p>
+                  <div className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-medium text-slate-700">
+                    {formatDateInput(getToday())}
+                  </div>
                 </div>
                 <button
                   type="submit"
@@ -916,11 +937,21 @@ export function App() {
         {user?.role === "admin" ? (
           <>
             <section className="rounded-3xl border border-slate-200 bg-white p-7 shadow-sm">
-              <SectionHeading
+              <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+                <SectionHeading
                   eyebrow="Administrative Dashboard"
                   title="Operational analytics and oversight"
-                body="This view summarizes daily and weekly waste movement, operator throughput, wet processing status, and worker-level operational reports."
-              />
+                  body="This view summarizes daily and weekly waste movement, operator throughput, wet processing status, and worker-level operational reports."
+                />
+                <button
+                  type="button"
+                  onClick={() => void handleWeeklyExport()}
+                  disabled={busy}
+                  className="rounded-2xl border border-slate-300 bg-white px-4 py-3 text-sm font-semibold text-slate-900 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:text-slate-400"
+                >
+                  Export Last 7 Days
+                </button>
+              </div>
               <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
                 <MetricCard label="Collections Today" value={metricValue("Collections Today")} />
                 <MetricCard label="Collections This Week" value={metricValue("Collections This Week")} />
