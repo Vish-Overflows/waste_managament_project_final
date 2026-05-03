@@ -34,6 +34,8 @@ def process_waste(
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Collection not found")
         source_location = collection.housing_block
         room_number = collection.room_number
+    elif payload.waste_category == "Wet Waste" and not source_location:
+        source_location = "Wet Waste Stream"
     elif not source_location:
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Source location is required")
 

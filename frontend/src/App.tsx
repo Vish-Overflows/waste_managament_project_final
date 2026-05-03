@@ -194,11 +194,12 @@ export function App() {
   });
   const [wasteForm, setWasteForm] = useState({
     sourceLocation: SOURCE_LOCATIONS[0],
-    wasteCategory: "Dry Waste",
     wasteSubtype: DRY_SUBTYPES[0],
     quantity: "",
   });
   const [wetForm, setWetForm] = useState({
+    wasteSubtype: WET_SUBTYPES[0],
+    quantity: "",
     compostQuantity: "",
     biogasQuantity: "",
     notes: "",
@@ -239,13 +240,6 @@ export function App() {
 
     void refreshRoleData(user.role);
   }, [user]);
-
-  useEffect(() => {
-    const subtypeOptions = wasteForm.wasteCategory === "Dry Waste" ? DRY_SUBTYPES : WET_SUBTYPES;
-    if (!subtypeOptions.includes(wasteForm.wasteSubtype)) {
-      setWasteForm((current) => ({ ...current, wasteSubtype: subtypeOptions[0] }));
-    }
-  }, [wasteForm.wasteCategory, wasteForm.wasteSubtype]);
 
   async function refreshRoleData(role: User["role"]) {
     setScreenError("");
@@ -359,10 +353,11 @@ export function App() {
         method: "POST",
         body: JSON.stringify({
           ...wasteForm,
+          wasteCategory: "Dry Waste",
           quantity: Number(wasteForm.quantity),
         }),
       });
-      setNotice("Quantification entry saved successfully.");
+      setNotice("Dry waste entry saved successfully.");
       setWasteForm((current) => ({ ...current, quantity: "" }));
       if (user) {
         await refreshRoleData(user.role);
@@ -381,16 +376,40 @@ export function App() {
     setNotice("");
 
     try {
-      await apiFetch<{ message: string }>("/processing/wet", {
-        method: "POST",
-        body: JSON.stringify({
-          compostQuantity: Number(wetForm.compostQuantity || 0),
-          biogasQuantity: Number(wetForm.biogasQuantity || 0),
-          notes: wetForm.notes || undefined,
-        }),
-      });
-      setNotice("Wet processing update recorded.");
-      setWetForm({ compostQuantity: "", biogasQuantity: "", notes: "" });
+      const wetQuantity = Number(wetForm.quantity || 0);
+      const compostQuantity = Number(wetForm.compostQuantity || 0);
+      const biogasQuantity = Number(wetForm.biogasQuantity || 0);
+
+      if (wetQuantity > 0) {
+        await apiFetch<WasteEntry>("/processing/waste", {
+          method: "POST",
+          body: JSON.stringify({
+            wasteCategory: "Wet Waste",
+            wasteSubtype: wetForm.wasteSubtype,
+            quantity: wetQuantity,
+          }),
+        });
+      }
+
+      if (compostQuantity > 0 || biogasQuantity > 0) {
+        await apiFetch<{ message: string }>("/processing/wet", {
+          method: "POST",
+          body: JSON.stringify({
+            compostQuantity,
+            biogasQuantity,
+            notes: wetForm.notes || undefined,
+          }),
+        });
+      }
+
+      setNotice("Wet waste entry saved successfully.");
+      setWetForm((current) => ({
+        ...current,
+        quantity: "",
+        compostQuantity: "",
+        biogasQuantity: "",
+        notes: "",
+      }));
       if (user) {
         await refreshRoleData(user.role);
       }
@@ -684,8 +703,8 @@ export function App() {
               <article className="rounded-3xl border border-slate-200 bg-white p-7 shadow-sm">
                 <SectionHeading
                   eyebrow="Operator Workflow"
-                  title="Quantify collected waste"
-                  body="Record waste directly by source location, category, subtype, and measured quantity."
+                  title="Record dry waste by source"
+                  body="Dry waste is tracked by source location, subtype, and measured quantity."
                 />
                 <form className="space-y-4" onSubmit={handleWasteSubmit}>
                   <div>
@@ -707,45 +726,24 @@ export function App() {
                       ))}
                     </select>
                   </div>
-                  <div className="grid gap-4 md:grid-cols-2">
-                    <div>
-                      <label className="mb-2 block text-sm font-medium text-slate-700" htmlFor="waste-category">
-                        Waste Category
-                      </label>
-                      <select
-                        id="waste-category"
-                        className="w-full rounded-2xl border border-slate-300 px-4 py-3 text-sm outline-none transition focus:border-slate-500"
-                        value={wasteForm.wasteCategory}
-                        onChange={(event) =>
-                          setWasteForm((current) => ({
-                            ...current,
-                            wasteCategory: event.target.value,
-                          }))
-                        }
-                      >
-                        <option value="Dry Waste">Dry Waste</option>
-                        <option value="Wet Waste">Wet Waste</option>
-                      </select>
-                    </div>
-                    <div>
-                      <label className="mb-2 block text-sm font-medium text-slate-700" htmlFor="waste-subtype">
-                        Subtype
-                      </label>
-                      <select
-                        id="waste-subtype"
-                        className="w-full rounded-2xl border border-slate-300 px-4 py-3 text-sm outline-none transition focus:border-slate-500"
-                        value={wasteForm.wasteSubtype}
-                        onChange={(event) =>
-                          setWasteForm((current) => ({ ...current, wasteSubtype: event.target.value }))
-                        }
-                      >
-                        {(wasteForm.wasteCategory === "Dry Waste" ? DRY_SUBTYPES : WET_SUBTYPES).map((item) => (
-                          <option key={item} value={item}>
-                            {item}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
+                  <div>
+                    <label className="mb-2 block text-sm font-medium text-slate-700" htmlFor="waste-subtype">
+                      Dry Waste Type
+                    </label>
+                    <select
+                      id="waste-subtype"
+                      className="w-full rounded-2xl border border-slate-300 px-4 py-3 text-sm outline-none transition focus:border-slate-500"
+                      value={wasteForm.wasteSubtype}
+                      onChange={(event) =>
+                        setWasteForm((current) => ({ ...current, wasteSubtype: event.target.value }))
+                      }
+                    >
+                      {DRY_SUBTYPES.map((item) => (
+                        <option key={item} value={item}>
+                          {item}
+                        </option>
+                      ))}
+                    </select>
                   </div>
                   <div>
                     <label className="mb-2 block text-sm font-medium text-slate-700" htmlFor="quantity">
@@ -769,7 +767,7 @@ export function App() {
                     disabled={busy || !wasteForm.sourceLocation}
                     className="w-full rounded-2xl bg-slate-900 px-4 py-3 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-400"
                   >
-                    {busy ? "Saving…" : "Save Quantification Entry"}
+                    {busy ? "Saving…" : "Save Dry Waste Entry"}
                   </button>
                 </form>
               </article>
@@ -777,8 +775,8 @@ export function App() {
               <article className="rounded-3xl border border-slate-200 bg-white p-7 shadow-sm">
                 <SectionHeading
                   eyebrow="Wet Processing"
-                  title="Record compost or biogas output"
-                  body="Enter compost and biogas quantities produced from the wet waste stream."
+                  title="Record wet waste and outputs"
+                  body="Wet waste is tracked by type and quantity, with optional compost and biogas output."
                 />
                 <form className="space-y-4" onSubmit={handleWetSubmit}>
                   <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4 text-sm text-slate-700">
@@ -786,6 +784,43 @@ export function App() {
                     <p className="mt-2 text-2xl font-semibold text-slate-900">
                       {formatWeight(wetStatus?.total_wet_processed ?? 0)}
                     </p>
+                  </div>
+                  <div className="grid gap-4 md:grid-cols-2">
+                    <div>
+                      <label className="mb-2 block text-sm font-medium text-slate-700" htmlFor="wet-subtype">
+                        Wet Waste Type
+                      </label>
+                      <select
+                        id="wet-subtype"
+                        className="w-full rounded-2xl border border-slate-300 px-4 py-3 text-sm outline-none transition focus:border-slate-500"
+                        value={wetForm.wasteSubtype}
+                        onChange={(event) =>
+                          setWetForm((current) => ({ ...current, wasteSubtype: event.target.value }))
+                        }
+                      >
+                        {WET_SUBTYPES.map((item) => (
+                          <option key={item} value={item}>
+                            {item}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                    <div>
+                      <label className="mb-2 block text-sm font-medium text-slate-700" htmlFor="wet-quantity">
+                        Wet Quantity (kg)
+                      </label>
+                      <input
+                        id="wet-quantity"
+                        type="number"
+                        step="0.01"
+                        min="0"
+                        className="w-full rounded-2xl border border-slate-300 px-4 py-3 text-sm outline-none transition focus:border-slate-500"
+                        value={wetForm.quantity}
+                        onChange={(event) =>
+                          setWetForm((current) => ({ ...current, quantity: event.target.value }))
+                        }
+                      />
+                    </div>
                   </div>
                   <div>
                     <label className="mb-2 block text-sm font-medium text-slate-700" htmlFor="compost-quantity">
@@ -835,10 +870,13 @@ export function App() {
                   </div>
                   <button
                     type="submit"
-                    disabled={busy}
+                    disabled={
+                      busy ||
+                      (!wetForm.quantity && !wetForm.compostQuantity && !wetForm.biogasQuantity)
+                    }
                     className="w-full rounded-2xl bg-emerald-700 px-4 py-3 text-sm font-semibold text-white transition hover:bg-emerald-600 disabled:cursor-not-allowed disabled:bg-emerald-300"
                   >
-                    {busy ? "Saving…" : "Record Wet Processing"}
+                    {busy ? "Saving…" : "Save Wet Waste Entry"}
                   </button>
                 </form>
                 {wetStatus?.latest_update ? (

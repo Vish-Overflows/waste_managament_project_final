@@ -161,6 +161,26 @@ class UpgradedApiIntegrationTests(unittest.TestCase):
         source_weights = {item["housing_block"]: item["processed_weight"] for item in sources.json()}
         self.assertGreaterEqual(source_weights["Sports Complex"], 3.75)
 
+        wet = self.client.post(
+            "/api/processing/waste",
+            json={
+                "wasteCategory": "Wet Waste",
+                "wasteSubtype": "Kitchen Waste",
+                "quantity": 2.5,
+            },
+            headers=self.auth_headers("operator1"),
+        )
+        self.assertEqual(wet.status_code, 200, wet.text)
+        self.assertEqual(wet.json()["housing_block"], "Wet Waste Stream")
+
+        updated_sources = self.client.get(
+            "/api/dashboard/blocks",
+            headers=self.auth_headers("admin"),
+        )
+        self.assertEqual(updated_sources.status_code, 200, updated_sources.text)
+        source_names = {item["housing_block"] for item in updated_sources.json()}
+        self.assertNotIn("Wet Waste Stream", source_names)
+
     def test_dashboard_requires_admin(self) -> None:
         response = self.client.get(
             "/api/dashboard/summary",

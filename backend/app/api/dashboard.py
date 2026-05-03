@@ -179,6 +179,7 @@ def blocks(
             func.count(WasteEntry.id).label("collections_count"),
             func.coalesce(func.sum(WasteEntry.quantity), 0).label("processed_weight"),
         )
+        .filter(WasteEntry.waste_category == "Dry Waste")
         .group_by(WasteEntry.housing_block)
         .order_by(func.coalesce(func.sum(WasteEntry.quantity), 0).desc())
         .all()
