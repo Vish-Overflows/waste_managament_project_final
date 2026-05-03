@@ -71,15 +71,25 @@ def update_wet_processing(
     )
     compost = float(payload.compost_quantity)
     biogas = float(payload.biogas_quantity)
+    logged_output = float(
+        db.query(
+            func.coalesce(
+                func.sum(WetProcessingUpdate.compost_quantity + WetProcessingUpdate.biogas_quantity),
+                0,
+            )
+        ).scalar()
+        or 0
+    )
+    remaining_wet = total_wet - logged_output
     if compost == 0 and biogas == 0:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Enter a compost or biogas quantity.",
         )
-    if compost + biogas > total_wet:
+    if compost + biogas > remaining_wet:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Compost and biogas quantities cannot exceed total wet waste processed.",
+            detail="Compost and biogas quantities cannot exceed remaining wet waste processed.",
         )
     update = WetProcessingUpdate(
         employee_id=user.username,

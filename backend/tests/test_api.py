@@ -3,10 +3,11 @@ from __future__ import annotations
 import os
 import tempfile
 import unittest
-from datetime import date
 from pathlib import Path
 
 from fastapi.testclient import TestClient
+
+from app.time_utils import campus_today
 
 
 class UpgradedApiIntegrationTests(unittest.TestCase):
@@ -61,7 +62,7 @@ class UpgradedApiIntegrationTests(unittest.TestCase):
             headers=self.auth_headers("staff1"),
         )
         self.assertEqual(response.status_code, 200, response.text)
-        self.assertEqual(response.json()["collection_date"], date.today().isoformat())
+        self.assertEqual(response.json()["collection_date"], campus_today().isoformat())
         return response.json()["id"]
 
     def test_healthcheck(self) -> None:
@@ -122,6 +123,13 @@ class UpgradedApiIntegrationTests(unittest.TestCase):
             headers=self.auth_headers("operator1"),
         )
         self.assertEqual(wet_update.status_code, 200, wet_update.text)
+
+        excessive_wet_update = self.client.post(
+            "/api/processing/wet",
+            json={"compostQuantity": 9999},
+            headers=self.auth_headers("operator1"),
+        )
+        self.assertEqual(excessive_wet_update.status_code, 400)
 
         dashboard = self.client.get(
             "/api/dashboard/summary",

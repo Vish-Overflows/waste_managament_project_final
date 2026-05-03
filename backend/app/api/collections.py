@@ -6,6 +6,7 @@ from fastapi import APIRouter, Depends, Query
 from app.dependencies import DbSession, require_role
 from app.models import HousingCollection, User
 from app.schemas import CollectionCreate, CollectionRead, PaginatedCollections
+from app.time_utils import campus_today
 
 router = APIRouter(prefix="/collections", tags=["collections"])
 
@@ -38,7 +39,7 @@ def create_collection(
         employee_id=user.username,
         housing_block=payload.housing_block,
         room_number=payload.room_number,
-        collection_date=date.today(),
+        collection_date=campus_today(),
         status="collected",
     )
     db.add(collection)

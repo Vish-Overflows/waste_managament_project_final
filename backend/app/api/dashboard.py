@@ -1,6 +1,6 @@
 import csv
 from collections import defaultdict
-from datetime import UTC, date, datetime, time, timedelta
+from datetime import UTC, date, datetime, timedelta
 from io import StringIO
 from typing import Annotated
 
@@ -18,16 +18,9 @@ from app.schemas import (
     SummaryMetric,
     TrendPoint,
 )
+from app.time_utils import campus_date, campus_today, local_day_start_utc, local_next_day_start_utc
 
 router = APIRouter(prefix="/dashboard", tags=["dashboard"])
-
-
-def start_of_day(value: date) -> datetime:
-    return datetime.combine(value, time.min, tzinfo=UTC)
-
-
-def next_day(value: date) -> datetime:
-    return start_of_day(value) + timedelta(days=1)
 
 
 def write_section(writer, title: str, headers: list[str], rows: list[list[object]]) -> None:
@@ -47,11 +40,11 @@ def summary(
     db: DbSession,
     _: Annotated[User, Depends(require_role("admin"))],
 ) -> DashboardSummary:
-    today = date.today()
+    today = campus_today()
     week_start = today - timedelta(days=today.weekday())
-    today_start = start_of_day(today)
-    tomorrow_start = next_day(today)
-    week_start_dt = start_of_day(week_start)
+    today_start = local_day_start_utc(today)
+    tomorrow_start = local_next_day_start_utc(today)
+    week_start_dt = local_day_start_utc(week_start)
     total_collections = db.query(func.count(HousingCollection.id)).scalar() or 0
     collections_today = (
         db.query(func.count(HousingCollection.id))
@@ -122,19 +115,18 @@ def trends(
     _: Annotated[User, Depends(require_role("admin"))],
     days: int = Query(default=14, ge=7, le=90),
 ) -> list[TrendPoint]:
-    since = date.today() - timedelta(days=days - 1)
-    since_dt = start_of_day(since)
+    since = campus_today() - timedelta(days=days - 1)
+    since_dt = local_day_start_utc(since)
     rows = (
-        db.query(
-            func.date(WasteEntry.created_at).label("entry_date"),
-            func.coalesce(func.sum(WasteEntry.quantity), 0).label("total_weight"),
-        )
+        db.query(WasteEntry.created_at, WasteEntry.quantity)
         .filter(WasteEntry.created_at >= since_dt)
-        .group_by(func.date(WasteEntry.created_at))
-        .order_by(func.date(WasteEntry.created_at))
+        .order_by(WasteEntry.created_at)
         .all()
     )
-    return [TrendPoint(date=str(row.entry_date), total_weight=float(row.total_weight)) for row in rows]
+    totals: dict[str, float] = defaultdict(float)
+    for row in rows:
+        totals[campus_date(row.created_at).isoformat()] += float(row.quantity or 0)
+    return [TrendPoint(date=day, total_weight=round(total, 2)) for day, total in sorted(totals.items())]
 
 
 @router.get("/category-breakdown", response_model=list[CategoryBreakdownPoint])
@@ -142,7 +134,7 @@ def category_breakdown(
     db: DbSession,
     _: Annotated[User, Depends(require_role("admin"))],
 ) -> list[CategoryBreakdownPoint]:
-    today = date.today()
+    today = campus_today()
     week_start = today - timedelta(days=today.weekday())
 
     def total_for_window(category: str, start: date | None) -> float:
@@ -150,7 +142,7 @@ def category_breakdown(
             WasteEntry.waste_category == category
         )
         if start:
-            query = query.filter(WasteEntry.created_at >= start_of_day(start))
+            query = query.filter(WasteEntry.created_at >= local_day_start_utc(start))
         return float(query.scalar() or 0)
 
     def total_for_day(category: str, target: date) -> float:
@@ -158,8 +150,8 @@ def category_breakdown(
             db.query(func.coalesce(func.sum(WasteEntry.quantity), 0))
             .filter(
                 WasteEntry.waste_category == category,
-                WasteEntry.created_at >= start_of_day(target),
-                WasteEntry.created_at < next_day(target),
+                WasteEntry.created_at >= local_day_start_utc(target),
+                WasteEntry.created_at < local_next_day_start_utc(target),
             )
             .scalar()
             or 0
@@ -240,10 +232,10 @@ def export_weekly_report(
     db: DbSession,
     _: Annotated[User, Depends(require_role("admin"))],
 ) -> Response:
-    today = date.today()
+    today = campus_today()
     since = today - timedelta(days=6)
-    since_dt = start_of_day(since)
-    until_dt = next_day(today)
+    since_dt = local_day_start_utc(since)
+    until_dt = local_next_day_start_utc(today)
 
     collections = (
         db.query(HousingCollection)
@@ -271,7 +263,7 @@ def export_weekly_report(
     category_totals: dict[str, float] = defaultdict(float)
 
     for entry in entries:
-        entry_date = entry.created_at.date().isoformat()
+        entry_date = campus_date(entry.created_at).isoformat()
         quantity = to_weight(entry.quantity)
         daily_totals[entry_date][entry.waste_category] += quantity
         category_totals[entry.waste_category] += quantity
