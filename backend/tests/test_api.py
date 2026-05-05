@@ -55,7 +55,7 @@ class UpgradedApiIntegrationTests(unittest.TestCase):
         response = self.client.post(
             "/api/collections",
             json={
-                "housingBlock": "HB 1",
+                "housingBlock": "1",
                 "roomNumber": "101",
                 "collectionDate": "2026-04-28",
             },
@@ -63,6 +63,7 @@ class UpgradedApiIntegrationTests(unittest.TestCase):
         )
         self.assertEqual(response.status_code, 200, response.text)
         self.assertEqual(response.json()["collection_date"], campus_today().isoformat())
+        self.assertEqual(response.json()["housing_block"], "1")
         return response.json()["id"]
 
     def test_healthcheck(self) -> None:
@@ -93,6 +94,31 @@ class UpgradedApiIntegrationTests(unittest.TestCase):
         self.assertEqual(operator["user"]["role"], "operator")
         admin = self.login("admin", "admins_key")
         self.assertEqual(admin["user"]["role"], "admin")
+
+    def test_staff_block_number_validation(self) -> None:
+        invalid = self.client.post(
+            "/api/collections",
+            json={
+                "housingBlock": "35",
+                "roomNumber": "202",
+                "collectionDate": "2026-04-28",
+            },
+            headers=self.auth_headers("staff1"),
+        )
+        self.assertEqual(invalid.status_code, 422)
+
+        valid = self.client.post(
+            "/api/collections",
+            json={
+                "housingBlock": "3",
+                "roomNumber": "101",
+                "collectionDate": "2026-04-28",
+            },
+            headers=self.auth_headers("staff1"),
+        )
+        self.assertEqual(valid.status_code, 200, valid.text)
+        self.assertEqual(valid.json()["housing_block"], "3")
+        self.assertEqual(valid.json()["room_number"], "101")
 
     def test_staff_operator_admin_workflow(self) -> None:
         collection_id = self.create_collection()
@@ -131,6 +157,49 @@ class UpgradedApiIntegrationTests(unittest.TestCase):
         )
         self.assertEqual(excessive_wet_update.status_code, 400)
 
+        wet_intake = self.client.post(
+            "/api/processing/wet-intake",
+            json={
+                "wasteSubtype": "Kitchen Waste",
+                "quantity": 6,
+                "compostQuantity": 4,
+                "biogasQuantity": 2,
+            },
+            headers=self.auth_headers("operator1"),
+        )
+        self.assertEqual(wet_intake.status_code, 200, wet_intake.text)
+
+        missing_machine_allocation = self.client.post(
+            "/api/processing/wet-intake",
+            json={
+                "wasteSubtype": "Food Waste",
+                "quantity": 3,
+                "compostQuantity": 0,
+                "biogasQuantity": 0,
+            },
+            headers=self.auth_headers("operator1"),
+        )
+        self.assertEqual(missing_machine_allocation.status_code, 400)
+
+        compost_distribution = self.client.post(
+            "/api/processing/compost-distributions",
+            json={
+                "entries": [
+                    {"recipient": "workers", "quantity": 2},
+                    {"recipient": "gardeners", "quantity": 3},
+                ]
+            },
+            headers=self.auth_headers("operator1"),
+        )
+        self.assertEqual(compost_distribution.status_code, 200, compost_distribution.text)
+
+        excessive_distribution = self.client.post(
+            "/api/processing/compost-distributions",
+            json={"entries": [{"recipient": "overflow", "quantity": 9999}]},
+            headers=self.auth_headers("operator1"),
+        )
+        self.assertEqual(excessive_distribution.status_code, 400)
+
         dashboard = self.client.get(
             "/api/dashboard/summary",
             headers=self.auth_headers("admin"),
@@ -151,6 +220,7 @@ class UpgradedApiIntegrationTests(unittest.TestCase):
         self.assertIn("Individual Operator Entries", report.text)
         self.assertIn("Dry Waste Source Patterns", report.text)
         self.assertIn("Wet Processing Updates", report.text)
+        self.assertIn("Compost Distribution Entries", report.text)
 
     def test_operator_can_quantify_public_bin_waste(self) -> None:
         processed = self.client.post(

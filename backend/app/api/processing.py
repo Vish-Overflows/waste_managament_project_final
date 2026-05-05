@@ -5,18 +5,35 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import func
 
 from app.dependencies import DbSession, require_role
-from app.models import HousingCollection, User, WasteEntry, WetProcessingUpdate
+from app.models import CompostDistribution, HousingCollection, User, WasteEntry, WetProcessingUpdate
 from app.schemas import (
+    CompostDistributionCreate,
     PaginatedWasteEntries,
     ProcessingTotals,
     WasteEntryRead,
+    WetIntakeCreate,
     WasteProcessCreate,
+    CompostDistributionRecord,
     WetProcessingCreate,
     WetProcessingRecord,
     WetProcessingStatus,
 )
+from app.time_utils import campus_today
 
 router = APIRouter(prefix="/processing", tags=["processing"])
+
+
+def wet_totals(db: DbSession) -> tuple[float, float, float, float]:
+    total_wet = float(
+        db.query(func.coalesce(func.sum(WasteEntry.quantity), 0))
+        .filter(WasteEntry.waste_category == "Wet Waste")
+        .scalar()
+        or 0
+    )
+    compost_deposited = float(db.query(func.coalesce(func.sum(WetProcessingUpdate.compost_quantity), 0)).scalar() or 0)
+    biogas_deposited = float(db.query(func.coalesce(func.sum(WetProcessingUpdate.biogas_quantity), 0)).scalar() or 0)
+    compost_distributed = float(db.query(func.coalesce(func.sum(CompostDistribution.quantity), 0)).scalar() or 0)
+    return total_wet, compost_deposited, biogas_deposited, compost_distributed
 
 
 @router.post("/waste", response_model=WasteEntryRead)
@@ -57,30 +74,66 @@ def process_waste(
     return WasteEntryRead.model_validate(entry)
 
 
+@router.post("/wet-intake", response_model=WasteEntryRead)
+def process_wet_intake(
+    payload: WetIntakeCreate,
+    db: DbSession,
+    user: Annotated[User, Depends(require_role("operator", "admin"))],
+) -> WasteEntryRead:
+    compost = float(payload.compost_quantity)
+    biogas = float(payload.biogas_quantity)
+    if compost == 0 and biogas == 0:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Enter how much wet waste went to compost or biogas.",
+        )
+    if compost + biogas > payload.quantity:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Compost and biogas machine quantities cannot exceed wet waste quantity.",
+        )
+
+    total_wet, compost_deposited, biogas_deposited, _ = wet_totals(db)
+    remaining_wet = total_wet - compost_deposited - biogas_deposited + float(payload.quantity)
+    if compost + biogas > remaining_wet:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Compost and biogas machine quantities cannot exceed remaining wet waste.",
+        )
+
+    entry = WasteEntry(
+        employee_id=user.username,
+        waste_category="Wet Waste",
+        waste_subtype=payload.waste_subtype,
+        housing_block="Wet Waste Stream",
+        room_number="Direct",
+        quantity=payload.quantity,
+        collection_id=None,
+    )
+    update = WetProcessingUpdate(
+        employee_id=user.username,
+        compost_quantity=compost,
+        biogas_quantity=biogas,
+        total_wet_reference=total_wet + float(payload.quantity),
+        notes=payload.notes,
+    )
+    db.add(entry)
+    db.add(update)
+    db.commit()
+    db.refresh(entry)
+    return WasteEntryRead.model_validate(entry)
+
+
 @router.post("/wet")
 def update_wet_processing(
     payload: WetProcessingCreate,
     db: DbSession,
     user: Annotated[User, Depends(require_role("operator", "admin"))],
 ) -> dict[str, str]:
-    total_wet = float(
-        db.query(func.coalesce(func.sum(WasteEntry.quantity), 0))
-        .filter(WasteEntry.waste_category == "Wet Waste")
-        .scalar()
-        or 0
-    )
+    total_wet, compost_deposited, biogas_deposited, _ = wet_totals(db)
     compost = float(payload.compost_quantity)
     biogas = float(payload.biogas_quantity)
-    logged_output = float(
-        db.query(
-            func.coalesce(
-                func.sum(WetProcessingUpdate.compost_quantity + WetProcessingUpdate.biogas_quantity),
-                0,
-            )
-        ).scalar()
-        or 0
-    )
-    remaining_wet = total_wet - logged_output
+    remaining_wet = total_wet - compost_deposited - biogas_deposited
     if compost == 0 and biogas == 0:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -101,6 +154,34 @@ def update_wet_processing(
     db.add(update)
     db.commit()
     return {"message": "Wet processing update saved"}
+
+
+@router.post("/compost-distributions")
+def create_compost_distribution(
+    payload: CompostDistributionCreate,
+    db: DbSession,
+    user: Annotated[User, Depends(require_role("operator", "admin"))],
+) -> dict[str, str]:
+    _, compost_deposited, _, compost_distributed = wet_totals(db)
+    quantity = sum(float(entry.quantity) for entry in payload.entries)
+    if quantity + compost_distributed > compost_deposited:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Compost distribution cannot exceed compost deposited so far.",
+        )
+
+    today = campus_today()
+    for entry in payload.entries:
+        db.add(
+            CompostDistribution(
+                employee_id=user.username,
+                recipient=entry.recipient,
+                quantity=float(entry.quantity),
+                distribution_date=today,
+            )
+        )
+    db.commit()
+    return {"message": "Compost distribution saved"}
 
 
 @router.get("/entries", response_model=PaginatedWasteEntries)
@@ -167,13 +248,14 @@ def wet_status(
     db: DbSession,
     _: Annotated[User, Depends(require_role("operator", "admin"))],
 ) -> WetProcessingStatus:
-    total_wet = float(
-        db.query(func.coalesce(func.sum(WasteEntry.quantity), 0))
-        .filter(WasteEntry.waste_category == "Wet Waste")
-        .scalar()
-        or 0
-    )
+    total_wet, compost_deposited, biogas_deposited, compost_distributed = wet_totals(db)
     latest = db.query(WetProcessingUpdate).order_by(WetProcessingUpdate.id.desc()).first()
+    latest_distributions = (
+        db.query(CompostDistribution)
+        .order_by(CompostDistribution.created_at.desc(), CompostDistribution.id.desc())
+        .limit(8)
+        .all()
+    )
     latest_payload = None
     if latest:
         latest_payload = WetProcessingRecord(
@@ -184,4 +266,12 @@ def wet_status(
             notes=latest.notes,
             created_at=latest.created_at.isoformat(),
         )
-    return WetProcessingStatus(total_wet_processed=round(total_wet, 2), latest_update=latest_payload)
+    return WetProcessingStatus(
+        total_wet_processed=round(total_wet, 2),
+        compost_deposited=round(compost_deposited, 2),
+        biogas_deposited=round(biogas_deposited, 2),
+        compost_distributed=round(compost_distributed, 2),
+        compost_available=round(compost_deposited - compost_distributed, 2),
+        latest_update=latest_payload,
+        latest_distributions=[CompostDistributionRecord.model_validate(item) for item in latest_distributions],
+    )

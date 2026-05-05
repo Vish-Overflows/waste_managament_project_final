@@ -9,7 +9,7 @@ from fastapi.responses import Response
 from sqlalchemy import func
 
 from app.dependencies import DbSession, require_role
-from app.models import HousingCollection, User, WasteEntry, WetProcessingUpdate
+from app.models import CompostDistribution, HousingCollection, User, WasteEntry, WetProcessingUpdate
 from app.schemas import (
     BlockStat,
     CategoryBreakdownPoint,
@@ -255,6 +255,12 @@ def export_weekly_report(
         .order_by(WetProcessingUpdate.created_at.desc(), WetProcessingUpdate.id.desc())
         .all()
     )
+    compost_distributions = (
+        db.query(CompostDistribution)
+        .filter(CompostDistribution.created_at >= since_dt, CompostDistribution.created_at < until_dt)
+        .order_by(CompostDistribution.created_at.desc(), CompostDistribution.id.desc())
+        .all()
+    )
 
     daily_totals: dict[str, dict[str, float]] = defaultdict(lambda: {"Dry Waste": 0.0, "Wet Waste": 0.0})
     dry_sources: dict[str, float] = defaultdict(float)
@@ -275,6 +281,7 @@ def export_weekly_report(
 
     compost_total = sum(to_weight(update.compost_quantity) for update in wet_updates)
     biogas_total = sum(to_weight(update.biogas_quantity) for update in wet_updates)
+    compost_distributed_total = sum(to_weight(item.quantity) for item in compost_distributions)
 
     output = StringIO()
     writer = csv.writer(output)
@@ -295,6 +302,7 @@ def export_weekly_report(
             ["Total waste kg", to_weight(sum(category_totals.values()))],
             ["Compost logged kg", to_weight(compost_total)],
             ["Biogas logged kg", to_weight(biogas_total)],
+            ["Compost distributed kg", to_weight(compost_distributed_total)],
         ],
     )
     write_section(
@@ -375,6 +383,21 @@ def export_weekly_report(
                 item.notes or "",
             ]
             for item in wet_updates
+        ],
+    )
+    write_section(
+        writer,
+        "Compost Distribution Entries",
+        ["Distributed At", "Distribution Date", "Operator", "Recipient", "Quantity kg"],
+        [
+            [
+                item.created_at.isoformat(),
+                item.distribution_date.isoformat(),
+                item.employee_id,
+                item.recipient,
+                to_weight(item.quantity),
+            ]
+            for item in compost_distributions
         ],
     )
 

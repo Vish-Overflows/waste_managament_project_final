@@ -66,9 +66,22 @@ export interface WetProcessingRecord {
   notes?: string | null;
 }
 
+export interface CompostDistributionRecord {
+  employee_id: string;
+  recipient: string;
+  quantity: number;
+  distribution_date: string;
+  created_at: string;
+}
+
 export interface WetProcessingStatus {
   total_wet_processed: number;
+  compost_deposited: number;
+  biogas_deposited: number;
+  compost_distributed: number;
+  compost_available: number;
   latest_update: WetProcessingRecord | null;
+  latest_distributions: CompostDistributionRecord[];
 }
 
 export interface SummaryMetric {

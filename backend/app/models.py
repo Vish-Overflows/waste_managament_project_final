@@ -62,3 +62,14 @@ class WetProcessingUpdate(Base):
     total_wet_reference: Mapped[float] = mapped_column(Numeric(10, 2))
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class CompostDistribution(Base):
+    __tablename__ = "compost_distributions"
+
+    id: Mapped[int] = mapped_column(primary_key=True, index=True)
+    employee_id: Mapped[str] = mapped_column(String(120), index=True)
+    recipient: Mapped[str] = mapped_column(String(120), index=True)
+    quantity: Mapped[float] = mapped_column(Numeric(10, 2))
+    distribution_date: Mapped[date] = mapped_column(Date, index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

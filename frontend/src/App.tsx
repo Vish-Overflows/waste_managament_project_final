@@ -40,14 +40,13 @@ ChartJS.register(
   Legend,
 );
 
-const HOUSING_BLOCKS = Array.from({ length: 13 }, (_, index) => `HB ${index + 1}`);
 const SOURCE_LOCATIONS = [
   "Housing Block",
   "Sports Complex",
   "Hostel Area",
   "Food Outlet",
   "Academic Area",
-  "Admin Building",
+  "Research Park",
   "Other Public Bin",
 ];
 const DRY_SUBTYPES = ["Paper", "Plastic", "Glass", "Metal", "Cardboard", "Mixed Dry"];
@@ -102,7 +101,7 @@ function formatWeight(value: number | string) {
 
 function EmptyState({ message }: { message: string }) {
   return (
-    <div className="rounded-2xl border border-dashed border-slate-300 bg-slate-50 px-4 py-6 text-sm text-slate-500">
+    <div className="rounded-xl border border-dashed border-slate-300 bg-slate-50 px-4 py-5 text-sm text-slate-500">
       {message}
     </div>
   );
@@ -118,19 +117,19 @@ function SectionHeading({
   body?: string;
 }) {
   return (
-    <div className="mb-5">
+    <div className="mb-4">
       <p className="text-xs font-semibold uppercase tracking-[0.22em] text-slate-500">{eyebrow}</p>
-      <h2 className="mt-2 text-xl font-semibold text-slate-900">{title}</h2>
-      {body ? <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-600">{body}</p> : null}
+      <h2 className="mt-2 text-lg font-semibold text-slate-900">{title}</h2>
+      {body ? <p className="mt-1 max-w-3xl text-sm leading-6 text-slate-600">{body}</p> : null}
     </div>
   );
 }
 
 function MetricCard({ label, value }: SummaryMetric) {
   return (
-    <article className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+    <article className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
       <p className="text-sm font-medium text-slate-500">{label}</p>
-      <p className="mt-3 text-2xl font-semibold text-slate-900">{value}</p>
+      <p className="mt-2 text-xl font-semibold text-slate-900">{value}</p>
     </article>
   );
 }
@@ -152,7 +151,7 @@ function DataTable({
 
   return (
     <div
-      className={`overflow-x-auto overflow-y-auto rounded-2xl border border-slate-200 ${maxHeightClass ?? ""}`}
+      className={`overflow-x-auto overflow-y-auto rounded-xl border border-slate-200 ${maxHeightClass ?? ""}`}
     >
       <table className="min-w-full divide-y divide-slate-200 text-sm">
         <thead className="bg-slate-50">
@@ -160,7 +159,7 @@ function DataTable({
             {headers.map((header) => (
               <th
                 key={header}
-                className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-[0.18em] text-slate-500"
+                className="px-3 py-2.5 text-left text-xs font-semibold uppercase tracking-[0.16em] text-slate-500"
               >
                 {header}
               </th>
@@ -171,7 +170,7 @@ function DataTable({
           {rows.map((row, rowIndex) => (
             <tr key={`${rowIndex}-${row[0]}`}>
               {row.map((cell, cellIndex) => (
-                <td key={`${rowIndex}-${cellIndex}`} className="px-4 py-3 text-slate-700">
+                <td key={`${rowIndex}-${cellIndex}`} className="px-3 py-2.5 text-slate-700">
                   {cell}
                 </td>
               ))}
@@ -192,7 +191,7 @@ export function App() {
 
   const [loginForm, setLoginForm] = useState({ username: "staff1", password: "" });
   const [staffForm, setStaffForm] = useState({
-    housingBlock: "HB 1",
+    housingBlock: "",
     roomNumber: "",
     collectionDate: getToday(),
   });
@@ -208,6 +207,7 @@ export function App() {
     biogasQuantity: "",
     notes: "",
   });
+  const [compostRows, setCompostRows] = useState([{ recipient: "", quantity: "" }]);
 
   const [staffCollections, setStaffCollections] = useState<PaginatedCollections | null>(null);
   const [processedEntries, setProcessedEntries] = useState<PaginatedWasteEntries | null>(null);
@@ -330,12 +330,18 @@ export function App() {
     setNotice("");
 
     try {
+      const blockNumber = Number(staffForm.housingBlock);
+      if (!Number.isInteger(blockNumber) || blockNumber < 1 || blockNumber > 34) {
+        setScreenError("Housing block number must be between 1 and 34.");
+        return;
+      }
+
       await apiFetch<CollectionRecord>("/collections", {
         method: "POST",
         body: JSON.stringify({ ...staffForm, collectionDate: getToday() }),
       });
       setNotice(`Collection recorded for ${staffForm.housingBlock}-${staffForm.roomNumber}.`);
-      setStaffForm((current) => ({ ...current, collectionDate: getToday() }));
+      setStaffForm((current) => ({ ...current, roomNumber: "", collectionDate: getToday() }));
       if (user) {
         await refreshRoleData(user.role);
       }
@@ -407,29 +413,31 @@ export function App() {
       const compostQuantity = Number(wetForm.compostQuantity || 0);
       const biogasQuantity = Number(wetForm.biogasQuantity || 0);
 
-      if (wetQuantity > 0) {
-        await apiFetch<WasteEntry>("/processing/waste", {
-          method: "POST",
-          body: JSON.stringify({
-            wasteCategory: "Wet Waste",
-            wasteSubtype: wetForm.wasteSubtype,
-            quantity: wetQuantity,
-          }),
-        });
+      if (wetQuantity <= 0) {
+        setScreenError("Enter the wet waste quantity.");
+        return;
+      }
+      if (compostQuantity + biogasQuantity <= 0) {
+        setScreenError("Enter how much wet waste went to compost or biogas.");
+        return;
+      }
+      if (compostQuantity + biogasQuantity > wetQuantity) {
+        setScreenError("Compost and biogas machine quantities cannot exceed wet waste quantity.");
+        return;
       }
 
-      if (compostQuantity > 0 || biogasQuantity > 0) {
-        await apiFetch<{ message: string }>("/processing/wet", {
-          method: "POST",
-          body: JSON.stringify({
-            compostQuantity,
-            biogasQuantity,
-            notes: wetForm.notes || undefined,
-          }),
-        });
-      }
+      await apiFetch<WasteEntry>("/processing/wet-intake", {
+        method: "POST",
+        body: JSON.stringify({
+          wasteSubtype: wetForm.wasteSubtype,
+          quantity: wetQuantity,
+          compostQuantity,
+          biogasQuantity,
+          notes: wetForm.notes || undefined,
+        }),
+      });
 
-      setNotice("Wet waste entry saved successfully.");
+      setNotice("Wet waste intake saved successfully.");
       setWetForm((current) => ({
         ...current,
         quantity: "",
@@ -442,6 +450,41 @@ export function App() {
       }
     } catch (error) {
       setScreenError(error instanceof Error ? error.message : "Wet processing update failed.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function handleCompostDistributionSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setBusy(true);
+    setScreenError("");
+    setNotice("");
+
+    try {
+      const entries = compostRows
+        .map((row) => ({
+          recipient: row.recipient.trim(),
+          quantity: Number(row.quantity || 0),
+        }))
+        .filter((row) => row.recipient && row.quantity > 0);
+
+      if (!entries.length) {
+        setScreenError("Add at least one compost recipient and quantity.");
+        return;
+      }
+
+      await apiFetch<{ message: string }>("/processing/compost-distributions", {
+        method: "POST",
+        body: JSON.stringify({ entries }),
+      });
+      setNotice("Compost distribution saved successfully.");
+      setCompostRows([{ recipient: "", quantity: "" }]);
+      if (user) {
+        await refreshRoleData(user.role);
+      }
+    } catch (error) {
+      setScreenError(error instanceof Error ? error.message : "Compost distribution could not be saved.");
     } finally {
       setBusy(false);
     }
@@ -622,22 +665,25 @@ export function App() {
                 <div className="grid gap-4 md:grid-cols-2">
                   <div>
                     <label className="mb-2 block text-sm font-medium text-slate-700" htmlFor="housing-block">
-                      Housing Block
+                      Housing Block Number
                     </label>
-                    <select
+                    <input
                       id="housing-block"
+                      type="number"
+                      min="1"
+                      max="34"
+                      step="1"
                       className="w-full rounded-2xl border border-slate-300 px-4 py-3 text-sm outline-none transition focus:border-slate-500"
                       value={staffForm.housingBlock}
+                      placeholder="1 to 34"
+                      required
                       onChange={(event) =>
                         setStaffForm((current) => ({ ...current, housingBlock: event.target.value }))
                       }
-                    >
-                      {HOUSING_BLOCKS.map((block) => (
-                        <option key={block} value={block}>
-                          {block}
-                        </option>
-                      ))}
-                    </select>
+                      onBlur={() =>
+                        setStaffForm((current) => ({ ...current, housingBlock: current.housingBlock.trim() }))
+                      }
+                    />
                   </div>
                   <div>
                     <label className="mb-2 block text-sm font-medium text-slate-700" htmlFor="room-number">
@@ -721,11 +767,10 @@ export function App() {
             </section>
 
             <section className="mt-6 grid gap-6 xl:grid-cols-[1.1fr,0.9fr]">
-              <article className="rounded-3xl border border-slate-200 bg-white p-7 shadow-sm">
+              <article className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
                 <SectionHeading
                   eyebrow="Operator Workflow"
                   title="Record dry waste by source"
-                  body="Dry waste is tracked by source location, subtype, and measured quantity."
                 />
                 <form className="space-y-4" onSubmit={handleWasteSubmit}>
                   <div>
@@ -793,18 +838,25 @@ export function App() {
                 </form>
               </article>
 
-              <article className="rounded-3xl border border-slate-200 bg-white p-7 shadow-sm">
+              <article className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
                 <SectionHeading
                   eyebrow="Wet Processing"
-                  title="Record wet waste and outputs"
-                  body="Wet waste is tracked by type and quantity, with optional compost and biogas output."
+                  title="Record wet waste intake"
                 />
                 <form className="space-y-4" onSubmit={handleWetSubmit}>
-                  <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4 text-sm text-slate-700">
-                    <p className="font-semibold text-slate-900">Wet waste processed to date</p>
-                    <p className="mt-2 text-2xl font-semibold text-slate-900">
-                      {formatWeight(wetStatus?.total_wet_processed ?? 0)}
-                    </p>
+                  <div className="grid gap-3 md:grid-cols-2">
+                    <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700">
+                      <p className="font-semibold text-slate-900">Wet processed</p>
+                      <p className="mt-2 text-xl font-semibold text-slate-900">
+                        {formatWeight(wetStatus?.total_wet_processed ?? 0)}
+                      </p>
+                    </div>
+                    <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700">
+                      <p className="font-semibold text-slate-900">Compost available</p>
+                      <p className="mt-2 text-xl font-semibold text-slate-900">
+                        {formatWeight(wetStatus?.compost_available ?? 0)}
+                      </p>
+                    </div>
                   </div>
                   <div className="grid gap-4 md:grid-cols-2">
                     <div>
@@ -834,9 +886,10 @@ export function App() {
                         id="wet-quantity"
                         type="number"
                         step="0.01"
-                        min="0"
+                        min="0.01"
                         className="w-full rounded-2xl border border-slate-300 px-4 py-3 text-sm outline-none transition focus:border-slate-500"
                         value={wetForm.quantity}
+                        required
                         onChange={(event) =>
                           setWetForm((current) => ({ ...current, quantity: event.target.value }))
                         }
@@ -845,7 +898,7 @@ export function App() {
                   </div>
                   <div>
                     <label className="mb-2 block text-sm font-medium text-slate-700" htmlFor="compost-quantity">
-                      Compost Quantity (kg)
+                      Sent To Compost Machine (kg)
                     </label>
                     <input
                       id="compost-quantity"
@@ -861,7 +914,7 @@ export function App() {
                   </div>
                   <div>
                     <label className="mb-2 block text-sm font-medium text-slate-700" htmlFor="biogas-quantity">
-                      Biogas Quantity (kg)
+                      Sent To Biogas Machine (kg)
                     </label>
                     <input
                       id="biogas-quantity"
@@ -893,7 +946,8 @@ export function App() {
                     type="submit"
                     disabled={
                       busy ||
-                      (!wetForm.quantity && !wetForm.compostQuantity && !wetForm.biogasQuantity)
+                      !wetForm.quantity ||
+                      (!wetForm.compostQuantity && !wetForm.biogasQuantity)
                     }
                     className="w-full rounded-2xl bg-emerald-700 px-4 py-3 text-sm font-semibold text-white transition hover:bg-emerald-600 disabled:cursor-not-allowed disabled:bg-emerald-300"
                   >
@@ -901,19 +955,119 @@ export function App() {
                   </button>
                 </form>
                 {wetStatus?.latest_update ? (
-                  <div className="mt-5 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4 text-sm text-slate-700">
-                    <p className="font-semibold text-slate-900">Latest update</p>
-                    <p className="mt-2">Recorded by: {wetStatus.latest_update.employee_id}</p>
-                    <p>Compost: {formatWeight(wetStatus.latest_update.compost_quantity)}</p>
-                    <p>Biogas: {formatWeight(wetStatus.latest_update.biogas_quantity)}</p>
-                    <p>Logged at: {formatDateTime(wetStatus.latest_update.created_at)}</p>
+                  <div className="mt-5 grid gap-3 rounded-xl border border-slate-200 bg-slate-50 px-4 py-4 text-sm text-slate-700 md:grid-cols-3">
+                    <p><span className="font-semibold text-slate-900">Compost:</span> {formatWeight(wetStatus.latest_update.compost_quantity)}</p>
+                    <p><span className="font-semibold text-slate-900">Biogas:</span> {formatWeight(wetStatus.latest_update.biogas_quantity)}</p>
+                    <p><span className="font-semibold text-slate-900">At:</span> {formatDateTime(wetStatus.latest_update.created_at)}</p>
                   </div>
                 ) : null}
               </article>
             </section>
 
             <section className="mt-6">
-              <article className="rounded-3xl border border-slate-200 bg-white p-7 shadow-sm">
+              <article className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+                <SectionHeading
+                  eyebrow="Compost Distribution"
+                  title="Record compost generated and issued"
+                />
+                <form className="space-y-4" onSubmit={handleCompostDistributionSubmit}>
+                  <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700">
+                    <p className="font-semibold text-slate-900">Available compost</p>
+                    <p className="mt-2 text-xl font-semibold text-slate-900">
+                      {formatWeight(wetStatus?.compost_available ?? 0)}
+                    </p>
+                  </div>
+                  {compostRows.map((row, index) => (
+                    <div key={index} className="grid gap-4 md:grid-cols-[1fr,12rem,auto]">
+                      <div>
+                        <label className="mb-2 block text-sm font-medium text-slate-700" htmlFor={`recipient-${index}`}>
+                          Recipient
+                        </label>
+                        <input
+                          id={`recipient-${index}`}
+                          type="text"
+                          className="w-full rounded-2xl border border-slate-300 px-4 py-3 text-sm outline-none transition focus:border-slate-500"
+                          value={row.recipient}
+                          placeholder="Workers, gardeners, department"
+                          onChange={(event) =>
+                            setCompostRows((current) =>
+                              current.map((item, itemIndex) =>
+                                itemIndex === index ? { ...item, recipient: event.target.value } : item,
+                              ),
+                            )
+                          }
+                        />
+                      </div>
+                      <div>
+                        <label className="mb-2 block text-sm font-medium text-slate-700" htmlFor={`compost-row-${index}`}>
+                          Quantity (kg)
+                        </label>
+                        <input
+                          id={`compost-row-${index}`}
+                          type="number"
+                          step="0.01"
+                          min="0.01"
+                          className="w-full rounded-2xl border border-slate-300 px-4 py-3 text-sm outline-none transition focus:border-slate-500"
+                          value={row.quantity}
+                          onChange={(event) =>
+                            setCompostRows((current) =>
+                              current.map((item, itemIndex) =>
+                                itemIndex === index ? { ...item, quantity: event.target.value } : item,
+                              ),
+                            )
+                          }
+                        />
+                      </div>
+                      <div className="flex items-end">
+                        <button
+                          type="button"
+                          disabled={compostRows.length === 1}
+                          onClick={() =>
+                            setCompostRows((current) => current.filter((_, itemIndex) => itemIndex !== index))
+                          }
+                          className="rounded-2xl border border-slate-300 px-4 py-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:text-slate-300"
+                        >
+                          Remove
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                  <div className="flex flex-wrap gap-3">
+                    <button
+                      type="button"
+                      onClick={() => setCompostRows((current) => [...current, { recipient: "", quantity: "" }])}
+                      className="rounded-2xl border border-slate-300 bg-white px-4 py-3 text-sm font-semibold text-slate-900 transition hover:bg-slate-50"
+                    >
+                      Add Recipient
+                    </button>
+                    <button
+                      type="submit"
+                      disabled={busy}
+                      className="rounded-2xl bg-emerald-700 px-4 py-3 text-sm font-semibold text-white transition hover:bg-emerald-600 disabled:cursor-not-allowed disabled:bg-emerald-300"
+                    >
+                      {busy ? "Saving…" : "Save Compost Distribution"}
+                    </button>
+                  </div>
+                </form>
+                {(wetStatus?.latest_distributions ?? []).length ? (
+                  <div className="mt-6">
+                    <DataTable
+                      headers={["Date", "Recipient", "Qty", "Recorded By"]}
+                      rows={(wetStatus?.latest_distributions ?? []).map((item) => [
+                        formatDate(item.distribution_date),
+                        item.recipient,
+                        formatWeight(item.quantity),
+                        item.employee_id,
+                      ])}
+                      emptyMessage="No compost distribution has been recorded yet."
+                    />
+                  </div>
+                ) : null}
+              </article>
+            </section>
+
+            <section className="mt-6">
+              <article className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
                 <SectionHeading
                   eyebrow="Processed Records"
                   title="My latest quantification entries"
@@ -936,12 +1090,11 @@ export function App() {
 
         {user?.role === "admin" ? (
           <>
-            <section className="rounded-3xl border border-slate-200 bg-white p-7 shadow-sm">
+            <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
               <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
                 <SectionHeading
                   eyebrow="Administrative Dashboard"
                   title="Operational analytics and oversight"
-                  body="This view summarizes daily and weekly waste movement, operator throughput, wet processing status, and worker-level operational reports."
                 />
                 <button
                   type="button"
@@ -968,7 +1121,7 @@ export function App() {
             </section>
 
             <section className="mt-6 grid gap-6 xl:grid-cols-[1.35fr,0.85fr]">
-              <article className="rounded-3xl border border-slate-200 bg-white p-7 shadow-sm">
+              <article className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
                 <SectionHeading
                   eyebrow="Trend Analysis"
                   title="Daily processed waste"
@@ -995,14 +1148,14 @@ export function App() {
                 )}
               </article>
 
-              <article className="rounded-3xl border border-slate-200 bg-white p-7 shadow-sm">
+              <article className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
                 <SectionHeading eyebrow="Waste Mix" title="Dry and wet split by period" />
                 {(dashboard?.categoryBreakdown ?? []).length ? (
                   <div className="space-y-4">
                     {dashboard?.categoryBreakdown.map((period) => (
                       <article
                         key={period.label}
-                        className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4"
+                          className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3"
                       >
                         <div className="flex items-center justify-between gap-3">
                           <div>
@@ -1042,7 +1195,7 @@ export function App() {
             </section>
 
             <section className="mt-6 grid gap-6 xl:grid-cols-2">
-              <article className="rounded-3xl border border-slate-200 bg-white p-7 shadow-sm">
+              <article className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
                 <SectionHeading
                   eyebrow="Source Analytics"
                   title="Processed weight by source location"
@@ -1066,7 +1219,7 @@ export function App() {
                 )}
               </article>
 
-              <article className="rounded-3xl border border-slate-200 bg-white p-7 shadow-sm">
+              <article className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
                 <SectionHeading
                   eyebrow="Operator Performance"
                   title="Quantification throughput"
@@ -1076,7 +1229,7 @@ export function App() {
                     {dashboard?.operators.map((operator) => (
                       <article
                         key={operator.employee_id}
-                        className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4"
+                        className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3"
                       >
                         <div className="flex items-center justify-between gap-3">
                           <div>
@@ -1104,11 +1257,10 @@ export function App() {
             </section>
 
             <section className="mt-6 grid gap-6 xl:grid-cols-[0.95fr,1.05fr]">
-              <article className="rounded-3xl border border-slate-200 bg-white p-7 shadow-sm">
+              <article className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
                 <SectionHeading
                   eyebrow="Worker Reports"
                   title="Individual staff collection records"
-                  body="Administrators can scroll through raw worker submissions here to audit what was collected, by whom, and on which date."
                 />
                 <DataTable
                   headers={["Date", "Block", "Room", "Staff", "Status"]}
@@ -1124,11 +1276,10 @@ export function App() {
                 />
               </article>
 
-              <article className="rounded-3xl border border-slate-200 bg-white p-7 shadow-sm">
+              <article className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
                 <SectionHeading
                   eyebrow="Operator Records"
                   title="Latest quantification entries"
-                  body="This is the operator record of how campus waste was sourced, categorized, and weighed."
                 />
                 <DataTable
                   headers={["Processed At", "Source", "Category", "Subtype", "Qty"]}
@@ -1145,21 +1296,25 @@ export function App() {
               </article>
             </section>
 
-            <section className="mt-6 rounded-3xl border border-slate-200 bg-white p-7 shadow-sm">
+            <section className="mt-6 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
               <SectionHeading
                 eyebrow="Wet Processing Status"
-                title="Latest compost and biogas update"
+                title="Compost and biogas status"
               />
               {wetStatus?.latest_update ? (
-                <div className="grid gap-4 md:grid-cols-4">
+                <div className="grid gap-4 md:grid-cols-5">
                   <MetricCard label="Wet Waste Processed" value={formatWeight(wetStatus.total_wet_processed)} />
                   <MetricCard
-                    label="Compost Logged"
-                    value={formatWeight(wetStatus.latest_update.compost_quantity)}
+                    label="Compost Deposited"
+                    value={formatWeight(wetStatus.compost_deposited)}
                   />
                   <MetricCard
-                    label="Biogas Logged"
-                    value={formatWeight(wetStatus.latest_update.biogas_quantity)}
+                    label="Biogas Deposited"
+                    value={formatWeight(wetStatus.biogas_deposited)}
+                  />
+                  <MetricCard
+                    label="Compost Available"
+                    value={formatWeight(wetStatus.compost_available)}
                   />
                   <MetricCard
                     label="Last Updated"
