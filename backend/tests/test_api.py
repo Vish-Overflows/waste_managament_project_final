@@ -279,6 +279,43 @@ class UpgradedApiIntegrationTests(unittest.TestCase):
         )
         self.assertEqual(response.status_code, 403)
 
+    def test_z_admin_can_clear_operational_data(self) -> None:
+        self.create_collection()
+        processed = self.client.post(
+            "/api/processing/waste",
+            json={
+                "sourceLocation": "Research Park",
+                "wasteCategory": "Dry Waste",
+                "wasteSubtype": "Paper",
+                "quantity": 1,
+            },
+            headers=self.auth_headers("operator1"),
+        )
+        self.assertEqual(processed.status_code, 200, processed.text)
+
+        blocked = self.client.delete(
+            "/api/dashboard/data/operational",
+            headers=self.auth_headers("operator1"),
+        )
+        self.assertEqual(blocked.status_code, 403)
+
+        cleared = self.client.delete(
+            "/api/dashboard/data/operational",
+            headers=self.auth_headers("admin"),
+        )
+        self.assertEqual(cleared.status_code, 200, cleared.text)
+        self.assertGreaterEqual(cleared.json()["housing_collections"], 1)
+        self.assertGreaterEqual(cleared.json()["waste_entries"], 1)
+
+        summary = self.client.get(
+            "/api/dashboard/summary",
+            headers=self.auth_headers("admin"),
+        )
+        self.assertEqual(summary.status_code, 200, summary.text)
+        metrics = {metric["label"]: metric["value"] for metric in summary.json()["metrics"]}
+        self.assertEqual(metrics["Collections Recorded"], 0)
+        self.assertEqual(metrics["Waste Processed"], 0)
+
 
 if __name__ == "__main__":
     unittest.main()

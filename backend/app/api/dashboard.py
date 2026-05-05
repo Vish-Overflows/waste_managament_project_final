@@ -35,6 +35,21 @@ def to_weight(value: object) -> float:
     return round(float(value or 0), 2)
 
 
+@router.delete("/data/operational")
+def clear_operational_data(
+    db: DbSession,
+    _: Annotated[User, Depends(require_role("admin"))],
+) -> dict[str, int | str]:
+    deleted = {
+        "compost_distributions": db.query(CompostDistribution).delete(synchronize_session=False),
+        "wet_processing_updates": db.query(WetProcessingUpdate).delete(synchronize_session=False),
+        "waste_entries": db.query(WasteEntry).delete(synchronize_session=False),
+        "housing_collections": db.query(HousingCollection).delete(synchronize_session=False),
+    }
+    db.commit()
+    return {"message": "Operational data cleared", **deleted}
+
+
 @router.get("/summary", response_model=DashboardSummary)
 def summary(
     db: DbSession,

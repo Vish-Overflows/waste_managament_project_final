@@ -375,6 +375,33 @@ export function App() {
     }
   }
 
+  async function handleClearOperationalData() {
+    const confirmed = window.confirm(
+      "Clear all staff collections, operator entries, wet processing, and compost distribution records?",
+    );
+    if (!confirmed) {
+      return;
+    }
+
+    setBusy(true);
+    setScreenError("");
+    setNotice("");
+
+    try {
+      await apiFetch<{ message: string }>("/dashboard/data/operational", {
+        method: "DELETE",
+      });
+      setNotice("Operational data cleared.");
+      if (user) {
+        await refreshRoleData(user.role);
+      }
+    } catch (error) {
+      setScreenError(error instanceof Error ? error.message : "Data could not be cleared.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function handleWasteSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setBusy(true);
@@ -1096,14 +1123,24 @@ export function App() {
                   eyebrow="Administrative Dashboard"
                   title="Operational analytics and oversight"
                 />
-                <button
-                  type="button"
-                  onClick={() => void handleWeeklyExport()}
-                  disabled={busy}
-                  className="rounded-2xl border border-slate-300 bg-white px-4 py-3 text-sm font-semibold text-slate-900 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:text-slate-400"
-                >
-                  Export Last 7 Days
-                </button>
+                <div className="flex flex-wrap gap-3">
+                  <button
+                    type="button"
+                    onClick={() => void handleWeeklyExport()}
+                    disabled={busy}
+                    className="rounded-2xl border border-slate-300 bg-white px-4 py-3 text-sm font-semibold text-slate-900 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:text-slate-400"
+                  >
+                    Export Last 7 Days
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => void handleClearOperationalData()}
+                    disabled={busy}
+                    className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-semibold text-rose-700 transition hover:bg-rose-100 disabled:cursor-not-allowed disabled:text-rose-300"
+                  >
+                    Clear Records
+                  </button>
+                </div>
               </div>
               <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
                 <MetricCard label="Collections Today" value={metricValue("Collections Today")} />
