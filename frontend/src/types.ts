@@ -79,7 +79,6 @@ export interface WetProcessingStatus {
   compost_deposited: number;
   biogas_deposited: number;
   compost_distributed: number;
-  compost_available: number;
   latest_update: WetProcessingRecord | null;
   latest_distributions: CompostDistributionRecord[];
 }

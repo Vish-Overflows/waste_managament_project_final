@@ -167,7 +167,7 @@ def create_compost_distribution(
     if quantity + compost_distributed > compost_deposited:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Compost distribution cannot exceed compost deposited so far.",
+            detail="Compost distribution exceeds the theoretical maximum from compost machine intake.",
         )
 
     today = campus_today()
@@ -271,7 +271,6 @@ def wet_status(
         compost_deposited=round(compost_deposited, 2),
         biogas_deposited=round(biogas_deposited, 2),
         compost_distributed=round(compost_distributed, 2),
-        compost_available=round(compost_deposited - compost_distributed, 2),
         latest_update=latest_payload,
         latest_distributions=[CompostDistributionRecord.model_validate(item) for item in latest_distributions],
     )

@@ -871,19 +871,11 @@ export function App() {
                   title="Record wet waste intake"
                 />
                 <form className="space-y-4" onSubmit={handleWetSubmit}>
-                  <div className="grid gap-3 md:grid-cols-2">
-                    <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700">
-                      <p className="font-semibold text-slate-900">Wet processed</p>
-                      <p className="mt-2 text-xl font-semibold text-slate-900">
-                        {formatWeight(wetStatus?.total_wet_processed ?? 0)}
-                      </p>
-                    </div>
-                    <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700">
-                      <p className="font-semibold text-slate-900">Compost available</p>
-                      <p className="mt-2 text-xl font-semibold text-slate-900">
-                        {formatWeight(wetStatus?.compost_available ?? 0)}
-                      </p>
-                    </div>
+                  <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700">
+                    <p className="font-semibold text-slate-900">Wet processed</p>
+                    <p className="mt-2 text-xl font-semibold text-slate-900">
+                      {formatWeight(wetStatus?.total_wet_processed ?? 0)}
+                    </p>
                   </div>
                   <div className="grid gap-4 md:grid-cols-2">
                     <div>
@@ -998,12 +990,6 @@ export function App() {
                   title="Record compost generated and issued"
                 />
                 <form className="space-y-4" onSubmit={handleCompostDistributionSubmit}>
-                  <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700">
-                    <p className="font-semibold text-slate-900">Available compost</p>
-                    <p className="mt-2 text-xl font-semibold text-slate-900">
-                      {formatWeight(wetStatus?.compost_available ?? 0)}
-                    </p>
-                  </div>
                   {compostRows.map((row, index) => (
                     <div key={index} className="grid gap-4 md:grid-cols-[1fr,12rem,auto]">
                       <div>
@@ -1339,7 +1325,7 @@ export function App() {
                 title="Compost and biogas status"
               />
               {wetStatus?.latest_update ? (
-                <div className="grid gap-4 md:grid-cols-5">
+                <div className="grid gap-4 md:grid-cols-4">
                   <MetricCard label="Wet Waste Processed" value={formatWeight(wetStatus.total_wet_processed)} />
                   <MetricCard
                     label="Compost Deposited"
@@ -1348,10 +1334,6 @@ export function App() {
                   <MetricCard
                     label="Biogas Deposited"
                     value={formatWeight(wetStatus.biogas_deposited)}
-                  />
-                  <MetricCard
-                    label="Compost Available"
-                    value={formatWeight(wetStatus.compost_available)}
                   />
                   <MetricCard
                     label="Last Updated"

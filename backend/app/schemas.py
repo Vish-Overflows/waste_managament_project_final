@@ -146,7 +146,6 @@ class WetProcessingStatus(BaseModel):
     compost_deposited: float = 0
     biogas_deposited: float = 0
     compost_distributed: float = 0
-    compost_available: float = 0
     latest_update: WetProcessingRecord | None
     latest_distributions: list[CompostDistributionRecord] = []
 
