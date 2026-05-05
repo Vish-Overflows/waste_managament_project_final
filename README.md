@@ -1,71 +1,143 @@
-# Campus Waste Management Portal
+# Campus Waste Management System
 
-Internal waste-management data entry application for campus sanitation staff.
+A full-stack campus sanitation operations platform for recording, quantifying, processing, and reviewing waste collection data.
 
-## Features
+The project was built for a real campus waste-management workflow with separate portals for field staff, waste operators, and administrators.
 
-- Session-based login with demo users
-- Separate workflows for dry, wet, and hazardous waste
-- Wet waste weekly compost/biogas update that uses total wet waste logged so far
-- SQLite-backed storage for entries and weekly wet processing updates
-- Admin dashboard with totals, recent entries, and wet processing status
+## Live Deployment
+
+Public Railway deployment:
+
+https://wastemanagementprojectfinal-production.up.railway.app
+
+Health check:
+
+https://wastemanagementprojectfinal-production.up.railway.app/healthz
+
+Expected production health response:
+
+```json
+{
+  "status": "ok",
+  "database": "postgresql",
+  "persistent": true
+}
+```
+
+## Tech Stack
+
+- Frontend: React, TypeScript, Vite, Tailwind CSS
+- Backend: FastAPI, SQLAlchemy, Pydantic
+- Database: PostgreSQL on Railway, SQLite fallback for local development
+- Auth: JWT-based role access
+- Deployment: Railway with Docker
+- Testing: Python `unittest` API integration tests
+
+## Main Features
+
+- Role-based access for staff, operator, and admin users
+- Staff housing collection logging
+- Manual housing block entry with validation from `1` to `34`
+- Room number recording with current-date locking
+- Dry waste quantification by source, subtype, and quantity
+- Wet waste intake with mandatory compost/biogas machine allocation
+- Compost distribution logging with multiple recipients
+- Admin dashboard for operational analytics
+- CSV export for last 7 days of analytics
+- Admin-only operational data reset
+- Persistent PostgreSQL deployment
+- API integration tests for core workflows
+
+## User Roles
+
+### Staff
+
+Staff users record collection from housing rooms.
+
+Current flow:
+
+- Enter housing block number from `1` to `34`
+- Enter room number
+- Date is automatically recorded by the system
+- Submit collection record
+
+Example entries:
+
+- `1-202`
+- `3-101`
+- `4-501`
+
+### Operator
+
+Operators quantify waste and log processing details.
+
+Dry waste flow:
+
+- Select source location
+- Select dry waste subtype
+- Enter quantity in kg
+
+Dry waste source examples:
+
+- Housing Block
+- Sports Complex
+- Hostel Area
+- Food Outlet
+- Academic Area
+- Research Park
+- Other Public Bin
+
+Wet waste flow:
+
+- Select wet waste type
+- Enter wet quantity in kg
+- Enter quantity sent to compost machine and/or biogas machine
+- Save wet intake record
+
+Compost distribution flow:
+
+- Enter one or more recipients
+- Enter quantity issued to each recipient
+- System prevents distribution beyond the theoretical maximum based on compost-machine intake
+
+Example distribution:
+
+- Workers: `2 kg`
+- Gardeners: `3 kg`
+
+### Admin
+
+Admins can view the complete operational picture.
+
+Admin capabilities:
+
+- View collection counts and waste totals
+- View dry/wet waste breakdown
+- View source analytics for dry waste
+- View operator throughput
+- View individual staff collection records
+- View individual operator quantification records
+- View compost and biogas processing status
+- Export last 7 days of analytics as CSV
+- Clear operational records when a fresh demo/data reset is needed
+
+The reset action clears operational records only. Login users remain available.
 
 ## Demo Credentials
 
-- `worker1 / password`
-- `worker2 / password`
-- `admin / password`
+Staff accounts do not require a password.
 
-## Run Legacy App Locally
+| Role | Username | Password |
+| --- | --- | --- |
+| Staff | `staff1` | none |
+| Staff | `staff2` | none |
+| Staff | `staff3` | none |
+| Operator | `operator1` | `op_key` |
+| Admin | `admin` | `admins_key` |
 
-```bash
-python3 server.py
-```
+## Local Development
 
-Open `http://127.0.0.1:8000`
-
-## Run Legacy Tests
-
-```bash
-python3 -m unittest test_app.py
-```
-
-## Production Upgrade Branch
-
-The `production-upgrade` branch keeps `main` frozen as the working baseline and builds the production system alongside it.
-
-### Upgraded Stack
-
-- `backend/`
-  FastAPI API, SQLAlchemy ORM, JWT authentication, PostgreSQL-ready persistence, role-based access
-- `frontend/`
-  React + TypeScript + Vite + Tailwind interface with separate staff, operator, and admin workflows
-- `docker-compose.yml`
-  local production-style stack for `frontend + backend + postgres + nginx`
-
-### Why This Upgrade Is Safer
-
-- Postgres stores records durably across days and weeks instead of relying on a local SQLite file
-- Gunicorn + Uvicorn workers give the API a more reliable production server path than Python's built-in server
-- The admin dashboard now includes trend, block, and operator analytics
-- Staff, operator, and admin flows are separated cleanly instead of sharing one form
-
-### Local Production-Style Run
-
-```bash
-docker compose up --build
-```
-
-Expected services:
-
-- frontend served behind Nginx
-- backend API on FastAPI
-- PostgreSQL for durable records
-- reverse proxy for a single entry point on `http://127.0.0.1`
-
-### Local Upgraded Stack Without Docker
-
-Run the FastAPI backend:
+### Backend
 
 ```bash
 python3 -m venv .venv
@@ -76,7 +148,21 @@ cd backend
 uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
 ```
 
-Run the React frontend in a second terminal:
+Backend URL:
+
+```text
+http://127.0.0.1:8000
+```
+
+Health check:
+
+```text
+http://127.0.0.1:8000/healthz
+```
+
+### Frontend
+
+In a second terminal:
 
 ```bash
 cd frontend
@@ -85,98 +171,75 @@ cp .env.example .env
 npm run dev
 ```
 
-Open `http://127.0.0.1:5173`.
+Frontend URL:
 
-Run upgraded API tests:
+```text
+http://127.0.0.1:5173
+```
+
+## Run Tests
+
+From the repository root:
 
 ```bash
 PYTHONPATH=backend .venv/bin/python -m unittest backend.tests.test_api
 ```
 
-### Demo Users On The Upgrade Branch
-
-- `staff1` / no password
-- `staff2` / no password
-- `staff3` / no password
-- `operator1 / op_key`
-- `admin / admins_key`
-
-### Railway Deployment For `production-upgrade`
-
-Deploy the upgraded branch as three Railway services in the same project:
-
-1. `PostgreSQL`
-   Add Railway's PostgreSQL template. Railway exposes `DATABASE_URL` and related `PG*` variables to connect services.
-
-2. `backend`
-   Connect the same GitHub repository, but set the branch to `production-upgrade`.
-
-   Required variables:
-
-   - `RAILWAY_DOCKERFILE_PATH=railway/backend.Dockerfile`
-   - `DATABASE_URL=${{Postgres.DATABASE_URL}}`
-   - `SECRET_KEY=<long-random-secret>`
-   - `WEB_CONCURRENCY=2`
-   - `SECURE_COOKIES=false`
-   - `CORS_ORIGINS=https://<your-frontend-service>.up.railway.app`
-
-3. `frontend`
-   Connect the same GitHub repository, again using the `production-upgrade` branch.
-
-   Required variables:
-
-   - `RAILWAY_DOCKERFILE_PATH=railway/frontend.Dockerfile`
-   - `VITE_API_BASE_URL=https://<your-backend-service>.up.railway.app/api`
-
-Why the frontend needs an API variable:
-
-- the production-upgrade frontend is deployed as a separate service from the backend
-- it uses bearer tokens in the browser and must know the backend public URL at build time
-- `frontend/.env.example` shows the same setting for local development
-
-Recommended deployment order:
-
-1. create the PostgreSQL service
-2. deploy the backend and confirm `/healthz` works
-3. deploy the frontend with `VITE_API_BASE_URL` pointing to the backend URL
-4. open the frontend domain and test all 3 roles
-
-Railway docs used for this setup:
-
-- Services: https://docs.railway.com/services
-- Dockerfile paths: https://docs.railway.com/deploy/dockerfiles
-- Variables: https://docs.railway.com/variables
-- PostgreSQL: https://docs.railway.com/guides/postgresql
-
-## Stable Public Deployment
-
-The production-upgrade app can be deployed as a single public Render web service using the included [Dockerfile](/Users/vishnusinha/Documents/project_sushoban/Dockerfile:1). This Dockerfile builds the React frontend, serves it from FastAPI, and keeps the API under `/api` on the same public URL.
-
-Recommended setup:
-
-- Create a Render `Postgres` database
-- Create a new Render `Web Service`
-- Choose the `Docker` runtime
-- Deploy the `production-upgrade` branch
-- Keep the Dockerfile path as `Dockerfile`
-- Set `DATABASE_URL` to the Render Postgres internal database URL
-
-Required web service variables:
+Build frontend:
 
 ```bash
-DATABASE_URL=<Render Postgres internal database URL>
-SECRET_KEY=<long-random-secret>
-SECURE_COOKIES=true
-CORS_ORIGINS=https://your-service-name.onrender.com
-WEB_CONCURRENCY=2
+cd frontend
+npm run build
 ```
 
-Health check:
+## Railway Deployment Notes
+
+This repository is deployed from the `production-upgrade` branch using the root `Dockerfile`.
+
+Railway app service variables:
+
+```env
+DATABASE_URL=${{Postgres.DATABASE_URL}}
+SECRET_KEY=<long-random-secret>
+SECURE_COOKIES=false
+WEB_CONCURRENCY=1
+APP_TIMEZONE=Asia/Kolkata
+```
+
+Do not manually set `PORT`. The Docker command listens on Railway's provided port and falls back to `8000` locally.
+
+The app should report PostgreSQL persistence at `/healthz` after deployment:
+
+```json
+{
+  "status": "ok",
+  "database": "postgresql",
+  "persistent": true
+}
+```
+
+## Project Structure
 
 ```text
-https://your-service-name.onrender.com/healthz
+backend/
+  app/
+    api/            FastAPI route modules
+    core/           config and security
+    models.py       SQLAlchemy models
+    schemas.py      Pydantic schemas
+    time_utils.py   campus timezone helpers
+  tests/            API integration tests
+
+frontend/
+  src/
+    App.tsx         main React application
+    lib/api.ts      API client helpers
+    types.ts        shared frontend types
+
+Dockerfile          production container build
+docker-compose.yml  local production-style stack
 ```
 
-Suggested Render URL outcome:
+## Resume Summary
 
-- `https://your-service-name.onrender.com`
+Built and deployed a full-stack campus waste management platform with role-based workflows for staff, operators, and admins, using React, FastAPI, PostgreSQL, and Railway. Implemented collection logging, dry/wet waste quantification, compost and biogas processing, compost distribution, admin analytics dashboards, CSV reporting, persistent database deployment, and API integration tests.
