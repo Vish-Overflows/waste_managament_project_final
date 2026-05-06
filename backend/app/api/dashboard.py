@@ -296,7 +296,12 @@ def export_weekly_report(
 
     compost_total = sum(to_weight(update.compost_quantity) for update in wet_updates)
     biogas_total = sum(to_weight(update.biogas_quantity) for update in wet_updates)
-    compost_distributed_total = sum(to_weight(item.quantity) for item in compost_distributions)
+    compost_distributed_total = sum(
+        to_weight(item.quantity) for item in compost_distributions if item.stream_type == "Compost"
+    )
+    biogas_distributed_total = sum(
+        to_weight(item.quantity) for item in compost_distributions if item.stream_type == "Biogas"
+    )
 
     output = StringIO()
     writer = csv.writer(output)
@@ -318,6 +323,7 @@ def export_weekly_report(
             ["Compost logged kg", to_weight(compost_total)],
             ["Biogas logged kg", to_weight(biogas_total)],
             ["Compost distributed kg", to_weight(compost_distributed_total)],
+            ["Biogas distributed kg", to_weight(biogas_distributed_total)],
         ],
     )
     write_section(
@@ -402,13 +408,14 @@ def export_weekly_report(
     )
     write_section(
         writer,
-        "Compost Distribution Entries",
-        ["Distributed At", "Distribution Date", "Operator", "Recipient", "Quantity kg"],
+        "Output Distribution Entries",
+        ["Distributed At", "Distribution Date", "Operator", "Type", "Recipient", "Quantity kg"],
         [
             [
                 item.created_at.isoformat(),
                 item.distribution_date.isoformat(),
                 item.employee_id,
+                item.stream_type,
                 item.recipient,
                 to_weight(item.quantity),
             ]

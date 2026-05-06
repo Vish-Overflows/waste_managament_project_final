@@ -182,8 +182,9 @@ class UpgradedApiIntegrationTests(unittest.TestCase):
         self.assertEqual(missing_machine_allocation.status_code, 400)
 
         compost_distribution = self.client.post(
-            "/api/processing/compost-distributions",
+            "/api/processing/output-distributions",
             json={
+                "streamType": "Compost",
                 "entries": [
                     {"recipient": "workers", "quantity": 2},
                     {"recipient": "gardeners", "quantity": 3},
@@ -193,9 +194,21 @@ class UpgradedApiIntegrationTests(unittest.TestCase):
         )
         self.assertEqual(compost_distribution.status_code, 200, compost_distribution.text)
 
+        biogas_distribution = self.client.post(
+            "/api/processing/output-distributions",
+            json={
+                "streamType": "Biogas",
+                "entries": [
+                    {"recipient": "kitchen", "quantity": 1.5},
+                ],
+            },
+            headers=self.auth_headers("operator1"),
+        )
+        self.assertEqual(biogas_distribution.status_code, 200, biogas_distribution.text)
+
         excessive_distribution = self.client.post(
-            "/api/processing/compost-distributions",
-            json={"entries": [{"recipient": "overflow", "quantity": 9999}]},
+            "/api/processing/output-distributions",
+            json={"streamType": "Biogas", "entries": [{"recipient": "overflow", "quantity": 9999}]},
             headers=self.auth_headers("operator1"),
         )
         self.assertEqual(excessive_distribution.status_code, 400)
@@ -220,7 +233,8 @@ class UpgradedApiIntegrationTests(unittest.TestCase):
         self.assertIn("Individual Operator Entries", report.text)
         self.assertIn("Dry Waste Source Patterns", report.text)
         self.assertIn("Wet Processing Updates", report.text)
-        self.assertIn("Compost Distribution Entries", report.text)
+        self.assertIn("Output Distribution Entries", report.text)
+        self.assertIn("Biogas distributed kg", report.text)
 
     def test_operator_can_quantify_public_bin_waste(self) -> None:
         processed = self.client.post(

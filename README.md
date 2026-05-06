@@ -41,7 +41,7 @@ Expected production health response:
 - Room number recording with current-date locking
 - Dry waste quantification by source, subtype, and quantity
 - Wet waste intake with mandatory compost/biogas machine allocation
-- Compost distribution logging with multiple recipients
+- Compost and biogas exit/distribution logging with multiple recipients
 - Admin dashboard for operational analytics
 - CSV export for last 7 days of analytics
 - Admin-only operational data reset
@@ -94,11 +94,12 @@ Wet waste flow:
 - Enter quantity sent to compost machine and/or biogas machine
 - Save wet intake record
 
-Compost distribution flow:
+Compost/biogas distribution flow:
 
+- Select whether the exit record is for compost or biogas
 - Enter one or more recipients
 - Enter quantity issued to each recipient
-- System prevents distribution beyond the theoretical maximum based on compost-machine intake
+- System prevents distribution beyond the theoretical maximum based on machine intake
 
 Example distribution:
 
@@ -242,4 +243,4 @@ docker-compose.yml  local production-style stack
 
 ## Resume Summary
 
-Built and deployed a full-stack campus waste management platform with role-based workflows for staff, operators, and admins, using React, FastAPI, PostgreSQL, and Railway. Implemented collection logging, dry/wet waste quantification, compost and biogas processing, compost distribution, admin analytics dashboards, CSV reporting, persistent database deployment, and API integration tests.
+Built and deployed a full-stack campus waste management platform with role-based workflows for staff, operators, and admins, using React, FastAPI, PostgreSQL, and Railway. Implemented collection logging, dry/wet waste quantification, compost and biogas processing, output distribution tracking, admin analytics dashboards, CSV reporting, persistent database deployment, and API integration tests.

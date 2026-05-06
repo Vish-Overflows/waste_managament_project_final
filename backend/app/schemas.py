@@ -112,6 +112,7 @@ class CompostDistributionEntryCreate(BaseModel):
 
 
 class CompostDistributionCreate(BaseModel):
+    stream_type: Literal["Compost", "Biogas"] = Field(default="Compost", alias="streamType")
     entries: list[CompostDistributionEntryCreate] = Field(min_length=1)
 
 
@@ -135,6 +136,7 @@ class CompostDistributionRecord(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     employee_id: str
+    stream_type: str
     recipient: str
     quantity: float
     distribution_date: date
@@ -146,6 +148,7 @@ class WetProcessingStatus(BaseModel):
     compost_deposited: float = 0
     biogas_deposited: float = 0
     compost_distributed: float = 0
+    biogas_distributed: float = 0
     latest_update: WetProcessingRecord | None
     latest_distributions: list[CompostDistributionRecord] = []
 

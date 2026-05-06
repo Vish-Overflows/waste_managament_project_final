@@ -129,10 +129,29 @@ def allow_direct_waste_entries() -> None:
         connection.execute(text("ALTER TABLE waste_entries ALTER COLUMN collection_id DROP NOT NULL"))
 
 
+def add_distribution_stream_type() -> None:
+    inspector = inspect(engine)
+    if "compost_distributions" not in inspector.get_table_names():
+        return
+
+    columns = {column["name"] for column in inspector.get_columns("compost_distributions")}
+    if "stream_type" in columns:
+        return
+
+    with engine.begin() as connection:
+        connection.execute(
+            text("ALTER TABLE compost_distributions ADD COLUMN stream_type VARCHAR(32) NOT NULL DEFAULT 'Compost'")
+        )
+        connection.execute(
+            text("CREATE INDEX IF NOT EXISTS ix_compost_distributions_stream_type ON compost_distributions (stream_type)")
+        )
+
+
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     Base.metadata.create_all(bind=engine)
     allow_direct_waste_entries()
+    add_distribution_stream_type()
     seed_users()
     yield
 

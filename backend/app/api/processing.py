@@ -23,7 +23,7 @@ from app.time_utils import campus_today
 router = APIRouter(prefix="/processing", tags=["processing"])
 
 
-def wet_totals(db: DbSession) -> tuple[float, float, float, float]:
+def wet_totals(db: DbSession) -> tuple[float, float, float, float, float]:
     total_wet = float(
         db.query(func.coalesce(func.sum(WasteEntry.quantity), 0))
         .filter(WasteEntry.waste_category == "Wet Waste")
@@ -32,8 +32,19 @@ def wet_totals(db: DbSession) -> tuple[float, float, float, float]:
     )
     compost_deposited = float(db.query(func.coalesce(func.sum(WetProcessingUpdate.compost_quantity), 0)).scalar() or 0)
     biogas_deposited = float(db.query(func.coalesce(func.sum(WetProcessingUpdate.biogas_quantity), 0)).scalar() or 0)
-    compost_distributed = float(db.query(func.coalesce(func.sum(CompostDistribution.quantity), 0)).scalar() or 0)
-    return total_wet, compost_deposited, biogas_deposited, compost_distributed
+    compost_distributed = float(
+        db.query(func.coalesce(func.sum(CompostDistribution.quantity), 0))
+        .filter(CompostDistribution.stream_type == "Compost")
+        .scalar()
+        or 0
+    )
+    biogas_distributed = float(
+        db.query(func.coalesce(func.sum(CompostDistribution.quantity), 0))
+        .filter(CompostDistribution.stream_type == "Biogas")
+        .scalar()
+        or 0
+    )
+    return total_wet, compost_deposited, biogas_deposited, compost_distributed, biogas_distributed
 
 
 @router.post("/waste", response_model=WasteEntryRead)
@@ -93,7 +104,7 @@ def process_wet_intake(
             detail="Compost and biogas machine quantities cannot exceed wet waste quantity.",
         )
 
-    total_wet, compost_deposited, biogas_deposited, _ = wet_totals(db)
+    total_wet, compost_deposited, biogas_deposited, _, _ = wet_totals(db)
     remaining_wet = total_wet - compost_deposited - biogas_deposited + float(payload.quantity)
     if compost + biogas > remaining_wet:
         raise HTTPException(
@@ -130,7 +141,7 @@ def update_wet_processing(
     db: DbSession,
     user: Annotated[User, Depends(require_role("operator", "admin"))],
 ) -> dict[str, str]:
-    total_wet, compost_deposited, biogas_deposited, _ = wet_totals(db)
+    total_wet, compost_deposited, biogas_deposited, _, _ = wet_totals(db)
     compost = float(payload.compost_quantity)
     biogas = float(payload.biogas_quantity)
     remaining_wet = total_wet - compost_deposited - biogas_deposited
@@ -156,18 +167,20 @@ def update_wet_processing(
     return {"message": "Wet processing update saved"}
 
 
-@router.post("/compost-distributions")
-def create_compost_distribution(
+@router.post("/output-distributions")
+def create_output_distribution(
     payload: CompostDistributionCreate,
     db: DbSession,
     user: Annotated[User, Depends(require_role("operator", "admin"))],
 ) -> dict[str, str]:
-    _, compost_deposited, _, compost_distributed = wet_totals(db)
+    _, compost_deposited, biogas_deposited, compost_distributed, biogas_distributed = wet_totals(db)
     quantity = sum(float(entry.quantity) for entry in payload.entries)
-    if quantity + compost_distributed > compost_deposited:
+    deposited = compost_deposited if payload.stream_type == "Compost" else biogas_deposited
+    distributed = compost_distributed if payload.stream_type == "Compost" else biogas_distributed
+    if quantity + distributed > deposited:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Compost distribution exceeds the theoretical maximum from compost machine intake.",
+            detail=f"{payload.stream_type} distribution exceeds the theoretical maximum from machine intake.",
         )
 
     today = campus_today()
@@ -175,13 +188,24 @@ def create_compost_distribution(
         db.add(
             CompostDistribution(
                 employee_id=user.username,
+                stream_type=payload.stream_type,
                 recipient=entry.recipient,
                 quantity=float(entry.quantity),
                 distribution_date=today,
             )
         )
     db.commit()
-    return {"message": "Compost distribution saved"}
+    return {"message": f"{payload.stream_type} distribution saved"}
+
+
+@router.post("/compost-distributions")
+def create_compost_distribution(
+    payload: CompostDistributionCreate,
+    db: DbSession,
+    user: Annotated[User, Depends(require_role("operator", "admin"))],
+) -> dict[str, str]:
+    payload.stream_type = "Compost"
+    return create_output_distribution(payload, db, user)
 
 
 @router.get("/entries", response_model=PaginatedWasteEntries)
@@ -248,7 +272,7 @@ def wet_status(
     db: DbSession,
     _: Annotated[User, Depends(require_role("operator", "admin"))],
 ) -> WetProcessingStatus:
-    total_wet, compost_deposited, biogas_deposited, compost_distributed = wet_totals(db)
+    total_wet, compost_deposited, biogas_deposited, compost_distributed, biogas_distributed = wet_totals(db)
     latest = db.query(WetProcessingUpdate).order_by(WetProcessingUpdate.id.desc()).first()
     latest_distributions = (
         db.query(CompostDistribution)
@@ -271,6 +295,7 @@ def wet_status(
         compost_deposited=round(compost_deposited, 2),
         biogas_deposited=round(biogas_deposited, 2),
         compost_distributed=round(compost_distributed, 2),
+        biogas_distributed=round(biogas_distributed, 2),
         latest_update=latest_payload,
         latest_distributions=[CompostDistributionRecord.model_validate(item) for item in latest_distributions],
     )

@@ -69,6 +69,7 @@ class CompostDistribution(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True, index=True)
     employee_id: Mapped[str] = mapped_column(String(120), index=True)
+    stream_type: Mapped[str] = mapped_column(String(32), default="Compost", index=True)
     recipient: Mapped[str] = mapped_column(String(120), index=True)
     quantity: Mapped[float] = mapped_column(Numeric(10, 2))
     distribution_date: Mapped[date] = mapped_column(Date, index=True)

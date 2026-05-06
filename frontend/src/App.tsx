@@ -208,6 +208,7 @@ export function App() {
     notes: "",
   });
   const [compostRows, setCompostRows] = useState([{ recipient: "", quantity: "" }]);
+  const [distributionType, setDistributionType] = useState<"Compost" | "Biogas">("Compost");
 
   const [staffCollections, setStaffCollections] = useState<PaginatedCollections | null>(null);
   const [processedEntries, setProcessedEntries] = useState<PaginatedWasteEntries | null>(null);
@@ -482,7 +483,7 @@ export function App() {
     }
   }
 
-  async function handleCompostDistributionSubmit(event: FormEvent<HTMLFormElement>) {
+  async function handleOutputDistributionSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setBusy(true);
     setScreenError("");
@@ -497,21 +498,21 @@ export function App() {
         .filter((row) => row.recipient && row.quantity > 0);
 
       if (!entries.length) {
-        setScreenError("Add at least one compost recipient and quantity.");
+        setScreenError(`Add at least one ${distributionType.toLowerCase()} recipient and quantity.`);
         return;
       }
 
-      await apiFetch<{ message: string }>("/processing/compost-distributions", {
+      await apiFetch<{ message: string }>("/processing/output-distributions", {
         method: "POST",
-        body: JSON.stringify({ entries }),
+        body: JSON.stringify({ streamType: distributionType, entries }),
       });
-      setNotice("Compost distribution saved successfully.");
+      setNotice(`${distributionType} distribution saved successfully.`);
       setCompostRows([{ recipient: "", quantity: "" }]);
       if (user) {
         await refreshRoleData(user.role);
       }
     } catch (error) {
-      setScreenError(error instanceof Error ? error.message : "Compost distribution could not be saved.");
+      setScreenError(error instanceof Error ? error.message : `${distributionType} distribution could not be saved.`);
     } finally {
       setBusy(false);
     }
@@ -986,10 +987,24 @@ export function App() {
             <section className="mt-6">
               <article className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
                 <SectionHeading
-                  eyebrow="Compost Distribution"
-                  title="Record compost generated and issued"
+                  eyebrow="Output Distribution"
+                  title="Record compost or biogas issued"
                 />
-                <form className="space-y-4" onSubmit={handleCompostDistributionSubmit}>
+                <form className="space-y-4" onSubmit={handleOutputDistributionSubmit}>
+                  <div>
+                    <label className="mb-2 block text-sm font-medium text-slate-700" htmlFor="distribution-type">
+                      Distribution Type
+                    </label>
+                    <select
+                      id="distribution-type"
+                      className="w-full rounded-2xl border border-slate-300 px-4 py-3 text-sm outline-none transition focus:border-slate-500"
+                      value={distributionType}
+                      onChange={(event) => setDistributionType(event.target.value as "Compost" | "Biogas")}
+                    >
+                      <option value="Compost">Compost Exit</option>
+                      <option value="Biogas">Biogas Exit</option>
+                    </select>
+                  </div>
                   {compostRows.map((row, index) => (
                     <div key={index} className="grid gap-4 md:grid-cols-[1fr,12rem,auto]">
                       <div>
@@ -1001,7 +1016,7 @@ export function App() {
                           type="text"
                           className="w-full rounded-2xl border border-slate-300 px-4 py-3 text-sm outline-none transition focus:border-slate-500"
                           value={row.recipient}
-                          placeholder="Workers, gardeners, department"
+                          placeholder={distributionType === "Compost" ? "Workers, gardeners, department" : "Kitchen, lab, department"}
                           onChange={(event) =>
                             setCompostRows((current) =>
                               current.map((item, itemIndex) =>
@@ -1058,21 +1073,22 @@ export function App() {
                       disabled={busy}
                       className="rounded-2xl bg-emerald-700 px-4 py-3 text-sm font-semibold text-white transition hover:bg-emerald-600 disabled:cursor-not-allowed disabled:bg-emerald-300"
                     >
-                      {busy ? "Saving…" : "Save Compost Distribution"}
+                      {busy ? "Saving…" : `Save ${distributionType} Distribution`}
                     </button>
                   </div>
                 </form>
                 {(wetStatus?.latest_distributions ?? []).length ? (
                   <div className="mt-6">
                     <DataTable
-                      headers={["Date", "Recipient", "Qty", "Recorded By"]}
+                      headers={["Date", "Type", "Recipient", "Qty", "Recorded By"]}
                       rows={(wetStatus?.latest_distributions ?? []).map((item) => [
                         formatDate(item.distribution_date),
+                        item.stream_type,
                         item.recipient,
                         formatWeight(item.quantity),
                         item.employee_id,
                       ])}
-                      emptyMessage="No compost distribution has been recorded yet."
+                      emptyMessage="No output distribution has been recorded yet."
                     />
                   </div>
                 ) : null}
