@@ -194,12 +194,19 @@ class UpgradedApiIntegrationTests(unittest.TestCase):
         )
         self.assertEqual(compost_distribution.status_code, 200, compost_distribution.text)
 
+        compost_missing_recipient = self.client.post(
+            "/api/processing/output-distributions",
+            json={"streamType": "Compost", "entries": [{"quantity": 1}]},
+            headers=self.auth_headers("operator1"),
+        )
+        self.assertEqual(compost_missing_recipient.status_code, 400)
+
         biogas_distribution = self.client.post(
             "/api/processing/output-distributions",
             json={
                 "streamType": "Biogas",
                 "entries": [
-                    {"recipient": "kitchen", "quantity": 1.5},
+                    {"quantity": 1.5},
                 ],
             },
             headers=self.auth_headers("operator1"),
@@ -208,7 +215,7 @@ class UpgradedApiIntegrationTests(unittest.TestCase):
 
         excessive_distribution = self.client.post(
             "/api/processing/output-distributions",
-            json={"streamType": "Biogas", "entries": [{"recipient": "overflow", "quantity": 9999}]},
+            json={"streamType": "Biogas", "entries": [{"quantity": 9999}]},
             headers=self.auth_headers("operator1"),
         )
         self.assertEqual(excessive_distribution.status_code, 400)

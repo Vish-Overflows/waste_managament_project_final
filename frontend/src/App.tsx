@@ -492,13 +492,17 @@ export function App() {
     try {
       const entries = compostRows
         .map((row) => ({
-          recipient: row.recipient.trim(),
+          recipient: distributionType === "Compost" ? row.recipient.trim() : undefined,
           quantity: Number(row.quantity || 0),
         }))
-        .filter((row) => row.recipient && row.quantity > 0);
+        .filter((row) => row.quantity > 0 && (distributionType === "Biogas" || row.recipient));
 
       if (!entries.length) {
-        setScreenError(`Add at least one ${distributionType.toLowerCase()} recipient and quantity.`);
+        setScreenError(
+          distributionType === "Compost"
+            ? "Add at least one compost recipient and quantity."
+            : "Enter a biogas quantity.",
+        );
         return;
       }
 
@@ -999,14 +1003,40 @@ export function App() {
                       id="distribution-type"
                       className="w-full rounded-2xl border border-slate-300 px-4 py-3 text-sm outline-none transition focus:border-slate-500"
                       value={distributionType}
-                      onChange={(event) => setDistributionType(event.target.value as "Compost" | "Biogas")}
+                      onChange={(event) => {
+                        const nextType = event.target.value as "Compost" | "Biogas";
+                        setDistributionType(nextType);
+                        setCompostRows((current) =>
+                          nextType === "Biogas"
+                            ? [{ recipient: "", quantity: current[0]?.quantity ?? "" }]
+                            : current,
+                        );
+                      }}
                     >
                       <option value="Compost">Compost Exit</option>
                       <option value="Biogas">Biogas Exit</option>
                     </select>
                   </div>
-                  {compostRows.map((row, index) => (
-                    <div key={index} className="grid gap-4 md:grid-cols-[1fr,12rem,auto]">
+                  {distributionType === "Biogas" ? (
+                    <div>
+                      <label className="mb-2 block text-sm font-medium text-slate-700" htmlFor="biogas-exit-quantity">
+                        Biogas Quantity (kg)
+                      </label>
+                      <input
+                        id="biogas-exit-quantity"
+                        type="number"
+                        step="0.01"
+                        min="0.01"
+                        className="w-full rounded-2xl border border-slate-300 px-4 py-3 text-sm outline-none transition focus:border-slate-500"
+                        value={compostRows[0]?.quantity ?? ""}
+                        onChange={(event) =>
+                          setCompostRows([{ recipient: "", quantity: event.target.value }])
+                        }
+                      />
+                    </div>
+                  ) : (
+                    compostRows.map((row, index) => (
+                      <div key={index} className="grid gap-4 md:grid-cols-[1fr,12rem,auto]">
                       <div>
                         <label className="mb-2 block text-sm font-medium text-slate-700" htmlFor={`recipient-${index}`}>
                           Recipient
@@ -1016,7 +1046,7 @@ export function App() {
                           type="text"
                           className="w-full rounded-2xl border border-slate-300 px-4 py-3 text-sm outline-none transition focus:border-slate-500"
                           value={row.recipient}
-                          placeholder={distributionType === "Compost" ? "Workers, gardeners, department" : "Kitchen, lab, department"}
+                          placeholder="Workers, gardeners, department"
                           onChange={(event) =>
                             setCompostRows((current) =>
                               current.map((item, itemIndex) =>
@@ -1058,16 +1088,19 @@ export function App() {
                           Remove
                         </button>
                       </div>
-                    </div>
-                  ))}
+                      </div>
+                    ))
+                  )}
                   <div className="flex flex-wrap gap-3">
-                    <button
-                      type="button"
-                      onClick={() => setCompostRows((current) => [...current, { recipient: "", quantity: "" }])}
-                      className="rounded-2xl border border-slate-300 bg-white px-4 py-3 text-sm font-semibold text-slate-900 transition hover:bg-slate-50"
-                    >
-                      Add Recipient
-                    </button>
+                    {distributionType === "Compost" ? (
+                      <button
+                        type="button"
+                        onClick={() => setCompostRows((current) => [...current, { recipient: "", quantity: "" }])}
+                        className="rounded-2xl border border-slate-300 bg-white px-4 py-3 text-sm font-semibold text-slate-900 transition hover:bg-slate-50"
+                      >
+                        Add Recipient
+                      </button>
+                    ) : null}
                     <button
                       type="submit"
                       disabled={busy}

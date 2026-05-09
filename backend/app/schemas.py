@@ -107,7 +107,7 @@ class WetIntakeCreate(BaseModel):
 class CompostDistributionEntryCreate(BaseModel):
     model_config = ConfigDict(populate_by_name=True, str_strip_whitespace=True)
 
-    recipient: str = Field(min_length=1, max_length=120)
+    recipient: str | None = Field(default=None, max_length=120)
     quantity: float = Field(gt=0)
 
 

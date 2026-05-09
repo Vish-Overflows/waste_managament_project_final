@@ -185,11 +185,17 @@ def create_output_distribution(
 
     today = campus_today()
     for entry in payload.entries:
+        recipient = entry.recipient or ""
+        if payload.stream_type == "Compost" and not recipient:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Recipient is required for compost distribution.",
+            )
         db.add(
             CompostDistribution(
                 employee_id=user.username,
                 stream_type=payload.stream_type,
-                recipient=entry.recipient,
+                recipient=recipient or "Biogas Exit",
                 quantity=float(entry.quantity),
                 distribution_date=today,
             )
