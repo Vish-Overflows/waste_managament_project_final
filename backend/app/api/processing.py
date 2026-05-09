@@ -173,16 +173,6 @@ def create_output_distribution(
     db: DbSession,
     user: Annotated[User, Depends(require_role("operator", "admin"))],
 ) -> dict[str, str]:
-    _, compost_deposited, biogas_deposited, compost_distributed, biogas_distributed = wet_totals(db)
-    quantity = sum(float(entry.quantity) for entry in payload.entries)
-    deposited = compost_deposited if payload.stream_type == "Compost" else biogas_deposited
-    distributed = compost_distributed if payload.stream_type == "Compost" else biogas_distributed
-    if quantity + distributed > deposited:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"{payload.stream_type} distribution exceeds the theoretical maximum from machine intake.",
-        )
-
     today = campus_today()
     for entry in payload.entries:
         recipient = entry.recipient or ""

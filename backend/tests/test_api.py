@@ -213,12 +213,12 @@ class UpgradedApiIntegrationTests(unittest.TestCase):
         )
         self.assertEqual(biogas_distribution.status_code, 200, biogas_distribution.text)
 
-        excessive_distribution = self.client.post(
+        large_biogas_distribution = self.client.post(
             "/api/processing/output-distributions",
             json={"streamType": "Biogas", "entries": [{"quantity": 9999}]},
             headers=self.auth_headers("operator1"),
         )
-        self.assertEqual(excessive_distribution.status_code, 400)
+        self.assertEqual(large_biogas_distribution.status_code, 200, large_biogas_distribution.text)
 
         dashboard = self.client.get(
             "/api/dashboard/summary",
