@@ -719,14 +719,14 @@ export function App() {
                   </div>
                   <div>
                     <label className="mb-2 block text-sm font-medium text-slate-700" htmlFor="room-number">
-                      Room Number
+                      Apartment Number
                     </label>
                     <input
                       id="room-number"
                       type="text"
                       className="w-full rounded-2xl border border-slate-300 px-4 py-3 text-sm outline-none transition focus:border-slate-500"
                       value={staffForm.roomNumber}
-                      placeholder="Enter room number"
+                      placeholder="Enter apartment number"
                       maxLength={32}
                       pattern="[A-Za-z0-9][A-Za-z0-9 /-]*"
                       title="Use letters, numbers, spaces, hyphens, or slashes."
@@ -765,7 +765,7 @@ export function App() {
                 body="These entries remain stored in the operational database for downstream processing and weekly reporting."
               />
               <DataTable
-                headers={["Date", "Block", "Room", "Status", "Recorded At"]}
+                headers={["Date", "Block", "Apartment", "Status", "Recorded At"]}
                 rows={(staffCollections?.items ?? []).map((item) => [
                   formatDate(item.collection_date),
                   item.housing_block,
@@ -1335,7 +1335,7 @@ export function App() {
                   title="Individual staff collection records"
                 />
                 <DataTable
-                  headers={["Date", "Block", "Room", "Staff", "Status"]}
+                  headers={["Date", "Block", "Apartment", "Staff", "Status"]}
                   rows={(adminCollections?.items ?? []).map((item) => [
                     formatDate(item.collection_date),
                     item.housing_block,
